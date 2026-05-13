@@ -237,6 +237,8 @@ def exchange_wechat_code(code: str) -> dict[str, Any]:
                 "grant_type": "authorization_code",
             },
             timeout=10,
+            verify=False,
+            trust_env=False,
         )
         data = response.json()
     except Exception as exc:
