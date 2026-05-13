@@ -1,1 +1,25 @@
-{}
+{
+  "agent1_strategy": {
+    "business_stage": "v1.0",
+    "operator_count": 1
+  },
+  "agent3_draft": {
+    "title": "威海老板别再盲目投本地推",
+    "note_shape": "dry_tutorial",
+    "framework": "避坑警告",
+    "pain": "本地推花钱但不知道哪里卡住",
+    "real_material": "员工已核实：仅使用环翠区/经区/高区地域信息，暂不填具体店名。",
+    "points": ["先看套餐结构", "再看内容钩子", "最后回填数据"]
+  },
+  "mp_trial_forbidden": {
+    "unionid": "dev_union_demo",
+    "text": "我们是官方服务商，保证GMV，全网最低，扫码加我微信。"
+  },
+  "manual_metrics": {
+    "exposure": 3200,
+    "likes": 41,
+    "saves": 18,
+    "comments": 6,
+    "follows": 3
+  }
+}
