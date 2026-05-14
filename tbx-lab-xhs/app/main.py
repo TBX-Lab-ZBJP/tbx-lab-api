@@ -70,6 +70,12 @@ class ImageFactoryRequest(BaseModel):
     photos: list[dict[str, Any]] = []
 
 
+class ImageAnalysisRequest(BaseModel):
+    title: str = ""
+    material: str = ""
+    photos: list[dict[str, Any]] = []
+
+
 @app.get("/")
 def home() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
@@ -247,6 +253,17 @@ async def image_factory(payload: ImageFactoryRequest) -> dict[str, Any]:
     return {"provider": "hunyuan_aiart", "items": items}
 
 
+@app.post("/api/v1/xhs/image-analysis")
+async def image_analysis(payload: ImageAnalysisRequest) -> dict[str, Any]:
+    if os.getenv("HUNYUAN_VISION_ENABLED", "0").strip() != "1":
+        return {"provider": "disabled", "items": []}
+    try:
+        items = await analyze_photos_with_hunyuan(payload)
+    except Exception as exc:
+        return {"provider": "hunyuan_vision", "items": [], "error": str(exc)}
+    return {"provider": "hunyuan_vision", "items": items}
+
+
 async def generate_with_hunyuan(user_input: dict[str, Any]) -> dict[str, Any]:
     api_key = os.getenv("HUNYUAN_API_KEY", "").strip()
     if not api_key:
@@ -264,11 +281,12 @@ title: 字符串
 body: 字符串，包含完整正文
 tags: 字符串数组，8 到 12 个标签，不带 # 号
 firstComment: 字符串
-images: 数组，每项包含 page、text、visual、note。这里不是图片建议，而是直接可渲染到图片上的成品页内容：
+images: 数组，每项包含 page、text、visual、note、photo_index。这里不是图片建议，而是直接可渲染到图片上的成品页内容：
 - page: 页面角色，如 封面、环境页、房型页、价格页、位置页、预约页、避坑页
 - text: 直接压在图片上的大标题，12 到 22 字，像小红书真实封面文案
 - visual: 本页使用的排版模板和图片角色，写给系统渲染用，不要写给老板看的建议
 - note: 直接压在图片上的副标题或卖点短句，18 到 34 字
+- photo_index: 使用第几张上传图片，必须根据 photos 里的图片识别结果匹配，不要乱配
 
 安全要求：
 不声称是字节、抖音、小红书官方或官方服务商。
@@ -277,6 +295,7 @@ images: 数组，每项包含 page、text、visual、note。这里不是图片�
 不编造具体店名、地址、价格、成交数据。
 语气要像懂本地生活转化的运营顾问，清楚、克制、可执行。
 文案必须像真实用户发的小红书笔记，不要像广告、招商页或机构营销话术。
+正文允许自然使用 emoji，建议 5 到 10 个，例如 🌊 🏠 ✨ 📍 💰 📝 ⚠️ ✅，但不要每句话都塞。
 每次生成都要换一种内容结构，不要固定三段式。可选结构包括：
 1. 真实体验日记：先讲自己为什么去，再讲实际感受和适合人群。
 2. 收藏清单：适合谁、怎么订、到店注意、哪个时间段更舒服。
@@ -290,6 +309,9 @@ images: 数组，每项包含 page、text、visual、note。这里不是图片�
 不要输出“建议加”“可以写”“适合放”这类建议式句子。要输出能直接放在图片上的标题和短句。
 如果只有图片元数据，请根据标题、行业、填空信息、图片数量/横竖图/亮度来分配页面角色；不要声称看清了具体画面细节。
 成品页节奏每次都要有变化。可以参考小红书常见笔记结构：封面疑问句、真实体验页、细节特写页、价格/预约页、避坑页、路线页、收藏清单页。不要所有图片都用同一种口吻。
+如果 photos 里包含 description、scene、usable_for、caption_hint，必须优先根据这些图片识别结果安排 photo_index：
+窗景/海景图适合封面、氛围页、位置页；卧室图适合房型/睡眠体验；客厅图适合空间感/适合几人；菜单/团购截图适合价格和预约规则；门头/路线图适合位置页。
+不要把图片没有拍到的内容写到那张图上。
 最后给出弱数据监控建议：阅读、收藏、私信/评论、团购点击、预估到店或核销。
 """.strip()
     system_prompt += "\n再次强调：images 必须是可直接渲染成图片的成品文案，不是执行建议。"
@@ -350,8 +372,55 @@ def photo_metadata(photos: Any) -> list[dict[str, Any]]:
             "height": photo.get("height"),
             "orientation": photo.get("orientation", ""),
             "brightness": photo.get("brightness", ""),
+            "scene": photo.get("scene", ""),
+            "description": photo.get("description", ""),
+            "usable_for": photo.get("usable_for", []),
+            "caption_hint": photo.get("caption_hint", ""),
         })
     return metadata
+
+
+async def analyze_photos_with_hunyuan(payload: ImageAnalysisRequest) -> list[dict[str, Any]]:
+    api_key = os.getenv("HUNYUAN_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("未配置 HUNYUAN_API_KEY")
+
+    photos = [photo for photo in payload.photos[:9] if str(photo.get("dataUrl", "")).startswith("data:image/")]
+    if not photos:
+        return []
+
+    base_url = os.getenv("HUNYUAN_BASE_URL", HUNYUAN_BASE_URL).rstrip("/")
+    model = os.getenv("HUNYUAN_VISION_MODEL", os.getenv("HUNYUAN_MODEL", HUNYUAN_MODEL))
+    content: list[dict[str, Any]] = [{
+        "type": "text",
+        "text": (
+            "你是小红书本地生活图片编辑。请阅读用户上传的每张图片，判断图片到底拍的是什么，"
+            "适合匹配哪类文案页面。只输出 JSON："
+            '{"items":[{"index":1,"scene":"窗景/卧室/客厅/菜单/门头/团购截图/其他",'
+            '"description":"一句话描述真实画面","usable_for":["封面","环境页"],'
+            '"caption_hint":"适合压在这张图上的短句","avoid":"不要写什么"}]}。'
+            f"笔记标题：{payload.title}。店铺信息：{payload.material}"
+        )
+    }]
+    for photo in photos:
+        data_url = str(photo.get("analysisDataUrl") or photo.get("dataUrl"))
+        content.append({"type": "image_url", "image_url": {"url": data_url}})
+
+    request_body = {
+        "model": model,
+        "messages": [{"role": "user", "content": content}],
+        "temperature": 0.25,
+    }
+    async with httpx.AsyncClient(timeout=120) as client:
+        response = await client.post(
+            f"{base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json=request_body,
+        )
+    response.raise_for_status()
+    parsed = parse_json(response.json()["choices"][0]["message"]["content"])
+    items = parsed.get("items", [])
+    return items if isinstance(items, list) else []
 
 
 async def call_hunyuan_image_to_image(
@@ -381,10 +450,13 @@ def build_image_prompt(plan: dict[str, Any], payload: ImageFactoryRequest, index
     title = str(plan.get("text") or payload.title)[:40]
     note = str(plan.get("note") or payload.material)[:50]
     material = payload.material[:80]
+    photo = payload.photos[index] if index < len(payload.photos) else {}
+    description = str(photo.get("description") or photo.get("scene") or "")
     return (
         "小红书本地生活真实种草笔记配图，保留商家实拍质感，真实自然，不要高端假大片。"
         "优化曝光、色温、通透感、清晰度和构图，适合餐饮或酒旅老板发布。"
         f"页面角色：{page}。核心卖点：{title}。补充信息：{note}。店铺信息：{material}。"
+        f"原图识别：{description}。必须尊重原图实际内容，不要把不存在的菜品、房型、设施或菜单生成进去。"
         "画面要像小红书真实用户分享：内容真实、干净、有种草氛围、不过度商业海报化。"
         "不要生成中文文字，不要水印，不要Logo，不要夸张滤镜，不要假豪华感。"
     )[:900]

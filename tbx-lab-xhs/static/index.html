@@ -1152,14 +1152,14 @@
           <div class="muted">这里是员工手动发布前使用的素材，不会自动发布到小红书。</div>
           <div class="material-pack-grid">
             <button class="btn secondary" onclick="copyPublishText()">复制发布文案</button>
-            <button class="btn ghost" onclick="downloadImagePlan()">下载图片工厂方案</button>
+            <button class="btn ghost" onclick="downloadImageJpgs()">下载成品图 JPG</button>
           </div>
           <div style="height:14px"></div>
           <h3>文案预览</h3>
           <pre id="materialCopyText">生成并审核后显示。</pre>
           <div style="height:14px"></div>
-          <h3>图片工厂方案预览</h3>
-          <pre id="materialImagePlan">生成并审核后显示。</pre>
+          <h3>成品图说明</h3>
+          <pre id="materialImagePlan">生成并审核后，可点击上方按钮下载 JPG 成品图。</pre>
         </div>
       </section>
     </main>
@@ -1234,6 +1234,7 @@
             const ctx = canvas.getContext("2d");
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             const dataUrl = canvas.toDataURL("image/jpeg", 0.94);
+            const analysisDataUrl = makeAnalysisImage(img);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
             let total = 0;
             const step = Math.max(4, Math.floor(imageData.length / 4000));
@@ -1245,6 +1246,7 @@
               name: file.name,
               type: "image/jpeg",
               dataUrl,
+              analysisDataUrl,
               width: canvas.width,
               height: canvas.height,
               orientation: canvas.width > canvas.height ? "横图" : canvas.width < canvas.height ? "竖图" : "方图",
@@ -1257,6 +1259,17 @@
       });
     }
 
+    function makeAnalysisImage(img) {
+      const canvas = document.createElement("canvas");
+      const maxSide = 900;
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.82);
+    }
+
     function photoPayload() {
       return uploadedPhotos.map(({ dataUrl, ...photo }) => photo);
     }
@@ -1266,10 +1279,16 @@
         name: photo.name,
         type: photo.type,
         dataUrl: photo.dataUrl,
+        analysisDataUrl: photo.analysisDataUrl,
         width: photo.width,
         height: photo.height,
         orientation: photo.orientation,
-        brightness: photo.brightness
+        brightness: photo.brightness,
+        scene: photo.scene,
+        description: photo.description,
+        usable_for: photo.usable_for,
+        caption_hint: photo.caption_hint,
+        avoid: photo.avoid
       }));
     }
 
@@ -1278,7 +1297,10 @@
       const count = uploadedPhotos.length ? Math.max(uploadedPhotos.length, plans.length) : plans.length;
       return Array.from({ length: count }, (_, index) => {
         const plan = plans[index % plans.length];
-        const photo = uploadedPhotos.length ? uploadedPhotos[index % uploadedPhotos.length] : null;
+        const mappedIndex = Number(plan.photo_index || plan.photoIndex || 0) - 1;
+        const photo = uploadedPhotos.length
+          ? uploadedPhotos[mappedIndex] || uploadedPhotos[index % uploadedPhotos.length]
+          : null;
         return { ...plan, photo, index, layout: pickLayout(index, plan) };
       });
     }
@@ -1443,6 +1465,7 @@
       }
       document.getElementById("copyOut").innerHTML = "正在调用腾讯混元生成，请稍等。";
       try {
+        await analyzeUploadedPhotos(title, material);
         const result = await apiPost("/api/v1/xhs/draft", {
           title,
           outputType,
@@ -1471,6 +1494,32 @@
           button.disabled = false;
           button.textContent = oldText;
         }
+      }
+    }
+
+    async function analyzeUploadedPhotos(title, material) {
+      if (!uploadedPhotos.length) return;
+      document.getElementById("copyOut").innerHTML = "正在让混元识别上传图片，匹配图文内容...";
+      try {
+        const data = await apiPost("/api/v1/xhs/image-analysis", {
+          title,
+          material,
+          photos: photoImagePayload()
+        });
+        (data.items || []).forEach(item => {
+          const index = Number(item.index || 0) - 1;
+          if (uploadedPhotos[index]) {
+            Object.assign(uploadedPhotos[index], {
+              scene: item.scene || "",
+              description: item.description || "",
+              usable_for: item.usable_for || [],
+              caption_hint: item.caption_hint || "",
+              avoid: item.avoid || ""
+            });
+          }
+        });
+      } catch (error) {
+        console.warn("混元图片识别失败，将使用图片基础信息生成", error);
       }
     }
 
@@ -1671,11 +1720,12 @@
         序号: index + 1,
         页面: item.page,
         页面文字: item.text,
+        匹配图片: item.photo_index || index + 1,
         画面建议: item.visual,
         备注: item.note
       }));
       document.getElementById("materialCopyText").textContent = copyText;
-      document.getElementById("materialImagePlan").textContent = JSON.stringify(imagePlan, null, 2);
+      document.getElementById("materialImagePlan").textContent = `已生成 ${getComposedSlides(latestOutput.images).length} 张 JPG 成品图。点击“下载成品图 JPG”即可保存。\n\n图片匹配：\n${JSON.stringify(imagePlan, null, 2)}`;
       document.getElementById("materialPack").classList.remove("hidden");
       document.getElementById("materialPack").scrollIntoView({ behavior: "smooth", block: "start" });
     }
