@@ -449,6 +449,31 @@
       font-weight: 800;
       line-height: 1.6;
     }
+    .upload-box {
+      border: 1px dashed #cbd5e1;
+      border-radius: 8px;
+      padding: 14px;
+      background: #f8fafc;
+      margin-bottom: 13px;
+    }
+    .upload-box input {
+      width: 100%;
+      margin-top: 8px;
+    }
+    .upload-preview {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .upload-preview img {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+    }
     .xhs-phone {
       width: min(430px, 100%);
       margin: 0 auto;
@@ -846,6 +871,12 @@
               <span>填空信息：店名 / 位置 / 产品 / 价格 / 到店理由</span>
               <textarea id="material" placeholder="例：店名、商圈/景区、招牌菜或房型、价格/套餐、停车/预约/核销规则、适合人群、老板想强调的卖点。"></textarea>
             </label>
+            <div class="upload-box">
+              <strong>上传商家实拍图</strong>
+              <div class="muted">可上传菜品、门头、房间、菜单、团购页截图。系统会根据真实图片给修图、加字、九宫格和图文匹配建议，不做 AI 生图。</div>
+              <input id="photoUpload" type="file" accept="image/*" multiple onchange="handlePhotoUpload(event)">
+              <div id="photoPreview" class="upload-preview"></div>
+            </div>
             <button class="btn" onclick="generate()">生成待审笔记</button>
           </div>
 
@@ -932,6 +963,7 @@
     let approvedTitles = [];
     let latestOutput = null;
     let xhsSlideIndex = 0;
+    let uploadedPhotos = [];
 
     async function apiPost(path, payload) {
       const response = await fetch(path, {
@@ -959,6 +991,53 @@
           ? "例如：周末亲子房 海边民宿 节日套餐 隐藏拍照位"
           : "例如：新品种草 客单价对比 隐藏菜单 周末聚餐";
       }
+    }
+
+    async function handlePhotoUpload(event) {
+      const files = Array.from(event.target.files || []).slice(0, 9);
+      uploadedPhotos = [];
+      document.getElementById("photoPreview").innerHTML = "正在处理图片...";
+      for (const file of files) {
+        try {
+          const photo = await compressImage(file);
+          uploadedPhotos.push(photo);
+        } catch (error) {
+          console.warn("图片处理失败", error);
+        }
+      }
+      document.getElementById("photoPreview").innerHTML = uploadedPhotos.map(photo => `
+        <img src="${photo.dataUrl}" alt="${escapeHtml(photo.name)}">
+      `).join("");
+    }
+
+    function compressImage(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = reject;
+        reader.onload = () => {
+          const img = new Image();
+          img.onerror = reject;
+          img.onload = () => {
+            const canvas = document.createElement("canvas");
+            const maxSide = 900;
+            const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+            canvas.width = Math.round(img.width * scale);
+            canvas.height = Math.round(img.height * scale);
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+            resolve({
+              name: file.name,
+              type: "image/jpeg",
+              dataUrl,
+              width: canvas.width,
+              height: canvas.height
+            });
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
     }
 
     function show(id, btn) {
@@ -1066,6 +1145,7 @@
           lane: document.getElementById("lane").value,
           keyword: document.getElementById("hotKeyword").value,
           material,
+          photos: uploadedPhotos,
           framework: "避坑警告"
         });
         result.firstComment = result.firstComment || result.first_comment || "";

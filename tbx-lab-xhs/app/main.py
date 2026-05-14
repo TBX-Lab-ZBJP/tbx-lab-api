@@ -53,6 +53,7 @@ class DraftRequest(BaseModel):
     lane: str = ""
     keyword: str = ""
     material: str = ""
+    photos: list[dict[str, Any]] = []
 
 
 class ScanRequest(BaseModel):
@@ -194,13 +195,25 @@ images: 数组，每项包含 page、text、visual、note
 1. 智能修图：曝光、色温、食物饱和度、房间通透感；
 2. 小红书爆款套版：菜品/房间图加价签、特色标注、九宫格场景图；
 3. 图文匹配检测：判断图片能不能证明文案里的卖点、价格、位置和规则。
+如果用户上传了图片，必须基于上传图片判断：哪张适合封面、哪张适合九宫格、哪张需要重拍、哪张适合加价签/路线/预约规则。不要假设不存在的图片内容。
 最后给出弱数据监控建议：阅读、收藏、私信/评论、团购点击、预估到店或核销。
 """.strip()
+    content: list[dict[str, Any]] = [
+        {"type": "text", "text": json.dumps(user_input, ensure_ascii=False)}
+    ]
+    for photo in user_input.get("photos", [])[:9]:
+        data_url = str(photo.get("dataUrl", ""))
+        if data_url.startswith("data:image/"):
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": data_url},
+            })
+
     request_body = {
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": json.dumps(user_input, ensure_ascii=False)},
+            {"role": "user", "content": content},
         ],
         "temperature": 0.45,
     }
@@ -222,7 +235,23 @@ def parse_json(text: str) -> dict[str, Any]:
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
         cleaned = re.sub(r"\s*```$", "", cleaned)
-    return json.loads(cleaned)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                return json.loads(cleaned[start : end + 1])
+            except json.JSONDecodeError:
+                pass
+    return {
+        "title": "本地生活转化型笔记",
+        "body": cleaned,
+        "tags": ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "团购套餐"],
+        "firstComment": "想看具体套餐、位置或预约方式，可以评论区问。",
+        "images": image_plan("本地生活转化型笔记"),
+    }
 
 
 def scan_text(text: str) -> dict[str, Any]:
