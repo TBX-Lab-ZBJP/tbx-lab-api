@@ -385,7 +385,7 @@
       color: #11294a;
     }
     .image-preview.real-photo {
-      min-height: 360px;
+      min-height: 420px;
       aspect-ratio: 3 / 4;
       position: relative;
       display: block;
@@ -404,15 +404,27 @@
       height: 100%;
       object-fit: cover;
       display: block;
-      filter: brightness(1.08) contrast(1.05) saturate(1.08);
-      transform: scale(1.02);
+      filter: brightness(1.04) contrast(1.04) saturate(1.05);
+      transform: scale(1.01);
     }
     .poster-shade {
       position: absolute;
       inset: 0;
       background:
-        linear-gradient(180deg, rgba(0,0,0,.08) 0%, rgba(0,0,0,.08) 45%, rgba(0,0,0,.78) 100%),
-        linear-gradient(90deg, rgba(0,0,0,.28), rgba(0,0,0,0) 46%);
+        linear-gradient(180deg, rgba(0,0,0,.08) 0%, rgba(0,0,0,0) 45%, rgba(0,0,0,.18) 100%),
+        linear-gradient(90deg, rgba(0,0,0,.12), rgba(0,0,0,0) 46%);
+    }
+    .poster-copy-card {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 14px;
+      z-index: 2;
+      border-radius: 14px;
+      background: rgba(255,255,255,.94);
+      color: #111111;
+      padding: 14px 14px 12px;
+      box-shadow: 0 10px 28px rgba(0,0,0,.18);
     }
     .poster-topline,
     .poster-page,
@@ -453,27 +465,43 @@
       font-weight: 950;
     }
     .poster-title {
-      bottom: 96px;
-      font-size: 26px;
-      line-height: 1.18;
+      position: static;
+      font-size: 25px;
+      line-height: 1.14;
       font-weight: 950;
-      color: #ffffff;
-      text-shadow: 0 2px 12px rgba(0,0,0,.38);
+      color: #111111;
+      text-shadow: none;
     }
     .poster-note {
-      bottom: 44px;
+      position: static;
+      margin-top: 8px;
       display: -webkit-box;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
-      color: rgba(255,255,255,.92);
+      color: #4b5563;
       font-size: 13px;
       line-height: 1.55;
+    }
+    .poster-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .poster-tag {
+      border-radius: 999px;
+      background: #fff1f3;
+      color: #b42318;
+      padding: 5px 8px;
+      font-size: 11px;
+      font-weight: 900;
     }
     .poster-sticker {
       right: 18px;
       left: auto;
-      bottom: 18px;
+      top: 116px;
+      bottom: auto;
       width: fit-content;
       background: #fff100;
       color: #111111;
@@ -484,6 +512,8 @@
       transform: rotate(-2deg);
     }
     .image-actions {
+      display: flex;
+      gap: 8px;
       padding: 0 12px 12px;
     }
     .btn.tiny {
@@ -678,6 +708,11 @@
       object-fit: cover;
       filter: brightness(1.08) contrast(1.05) saturate(1.08);
       transform: scale(1.02);
+    }
+    .xhs-card-art.has-photo .poster-copy-card {
+      left: 18px;
+      right: 18px;
+      bottom: 18px;
     }
     .xhs-card-art.has-photo .poster-title {
       font-size: 28px;
@@ -1001,7 +1036,7 @@
             </label>
             <div class="upload-box">
               <strong>上传商家实拍图</strong>
-              <div class="muted">可上传菜品、门头、房间、菜单、团购页截图。系统会根据真实图片给修图、加字、九宫格和图文匹配建议，不做 AI 生图。</div>
+              <div class="muted">可上传菜品、门头、房间、菜单、团购页截图。系统会调用混元图像能力处理实拍图，再生成可直接下载的小红书成品图。</div>
               <input id="photoUpload" type="file" accept="image/*" multiple onchange="handlePhotoUpload(event)">
               <div id="photoPreview" class="upload-preview"></div>
             </div>
@@ -1147,13 +1182,13 @@
           img.onerror = reject;
           img.onload = () => {
             const canvas = document.createElement("canvas");
-            const maxSide = 900;
+            const maxSide = 2400;
             const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
             canvas.width = Math.round(img.width * scale);
             canvas.height = Math.round(img.height * scale);
             const ctx = canvas.getContext("2d");
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.94);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
             let total = 0;
             const step = Math.max(4, Math.floor(imageData.length / 4000));
@@ -1181,6 +1216,18 @@
       return uploadedPhotos.map(({ dataUrl, ...photo }) => photo);
     }
 
+    function photoImagePayload() {
+      return uploadedPhotos.map(photo => ({
+        name: photo.name,
+        type: photo.type,
+        dataUrl: photo.dataUrl,
+        width: photo.width,
+        height: photo.height,
+        orientation: photo.orientation,
+        brightness: photo.brightness
+      }));
+    }
+
     function getComposedSlides(images) {
       const plans = images?.length ? images : buildImagePlan(latestOutput?.title || "本地生活爆款图文");
       const count = uploadedPhotos.length ? Math.max(uploadedPhotos.length, plans.length) : plans.length;
@@ -1202,18 +1249,25 @@
       if (!photo?.dataUrl) {
         return `<div class="image-preview">${escapeHtml(item.text)}</div>`;
       }
+      const imgSrc = photo.generatedUrl || photo.dataUrl;
       return `
         <div class="image-preview real-photo">
-          <img src="${photo.dataUrl}" alt="${escapeHtml(photo.name || `实拍图${index + 1}`)}">
+          <img src="${imgSrc}" alt="${escapeHtml(photo.name || `实拍图${index + 1}`)}">
           <div class="poster-shade"></div>
           <div class="poster-topline">
-            <span class="poster-pill">真实到店图</span>
-            <span class="poster-pill">${escapeHtml(photo.orientation || "实拍")}</span>
-            <span class="poster-pill">${escapeHtml(photo.brightness || "已优化")}</span>
+            <span class="poster-pill">${photo.generatedUrl ? "混元优化图" : "真实到店图"}</span>
+            <span class="poster-pill">可直接发</span>
           </div>
           <div class="poster-page">${escapeHtml(item.page || `第${index + 1}张`)}</div>
-          <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
-          <div class="poster-note">${escapeHtml(item.note || item.visual || "保留真实感，加清楚价格、位置和到店理由。")}</div>
+          <div class="poster-copy-card">
+            <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
+            <div class="poster-note">${escapeHtml(item.note || item.visual || "真实实拍图，加清楚价格、位置和到店理由。")}</div>
+            <div class="poster-tags">
+              <span class="poster-tag">收藏备用</span>
+              <span class="poster-tag">到店清单</span>
+              <span class="poster-tag">真实体验</span>
+            </div>
+          </div>
           <div class="poster-sticker">${index === 0 ? "封面钩子" : `第 ${index + 1} 张`}</div>
         </div>
       `;
@@ -1332,6 +1386,7 @@
         result.images = result.images?.length ? result.images : buildImagePlan(result.title || title);
         result.compliance = result.compliance || scanText(result.body || "");
         latestOutput = result;
+        await generateHunyuanImages();
         renderCopy(result);
         renderImages(result.images);
         document.getElementById("scanText").value = result.body || "";
@@ -1405,36 +1460,38 @@
       ];
     }
 
+    async function generateHunyuanImages() {
+      if (!uploadedPhotos.length || !latestOutput) return;
+      document.getElementById("imageOut").innerHTML = "正在调用混元处理实拍图，并生成小红书成品图...";
+      try {
+        const data = await apiPost("/api/v1/xhs/image-factory", {
+          title: latestOutput.title,
+          material: document.getElementById("material").value,
+          images: latestOutput.images,
+          photos: photoImagePayload()
+        });
+        if (!data.items?.length) return;
+        data.items.forEach(item => {
+          if (item.image && uploadedPhotos[item.index]) {
+            uploadedPhotos[item.index].generatedUrl = item.image;
+          }
+        });
+      } catch (error) {
+        console.warn("混元图像生成失败，使用高清原图排版", error);
+      }
+    }
+
     function renderImages(images) {
       const slides = getComposedSlides(images);
       document.getElementById("imageOut").innerHTML = `
-        <div class="factory-note">已按上传实拍图生成小红书竖版图文素材。不是 AI 生图，而是把老板原图做成“真实 + 种草感”的封面、内页、九宫格和标注图。</div>
+        <div class="factory-note">已生成可直接发布的小红书图文成品。开启混元生图后，底图由混元处理；未开启时使用高清原图完成排版。</div>
         <div class="actions" style="margin:12px 0">
           <button class="btn secondary" onclick="downloadImageJpgs()">下载全部成品图 JPG</button>
         </div>
-        ${latestOutput?.benchmark?.accounts?.length ? `
-          <div class="card" style="margin-bottom:12px">
-            <h3>对标参考</h3>
-            <div class="benchmark-list">
-              ${latestOutput.benchmark.accounts.map(account => `
-                <div class="benchmark-item">
-                  <strong>${escapeHtml(account)}</strong><br>
-                  参考方向：真实图片、价格锚点、九宫格场景、到店转化。<br>
-                  使用边界：只参考结构，不复制文案和图片。
-                </div>
-              `).join("")}
-            </div>
-          </div>
-        ` : ""}
         <div class="image-grid">
           ${slides.map((item, index) => `
             <div class="image-card">
               ${posterHTML(item, index)}
-              <div class="image-meta">
-                <strong>${escapeHtml(item.page)}</strong><br>
-                画面：${escapeHtml(item.visual)}<br>
-                备注：${escapeHtml(item.note)}
-              </div>
               <div class="image-actions">
                 <button class="btn tiny ghost" onclick="downloadOneImage(${index})">下载这张 JPG</button>
               </div>
@@ -1474,15 +1531,22 @@
                 <div class="xhs-slide">
                   ${item.photo?.dataUrl ? `
                     <div class="xhs-card-art has-photo">
-                      <img src="${item.photo.dataUrl}" alt="${escapeHtml(item.photo.name || `实拍图${index + 1}`)}">
+                      <img src="${item.photo.generatedUrl || item.photo.dataUrl}" alt="${escapeHtml(item.photo.name || `实拍图${index + 1}`)}">
                       <div class="poster-shade"></div>
                       <div class="poster-topline">
-                        <span class="poster-pill">真实到店图</span>
-                        <span class="poster-pill">${escapeHtml(item.photo.orientation || "实拍")}</span>
+                        <span class="poster-pill">${item.photo.generatedUrl ? "混元优化图" : "真实到店图"}</span>
+                        <span class="poster-pill">可直接发</span>
                       </div>
                       <div class="poster-page">${escapeHtml(item.page)}</div>
-                      <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
-                      <div class="poster-note">${escapeHtml(item.note)}</div>
+                      <div class="poster-copy-card">
+                        <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
+                        <div class="poster-note">${escapeHtml(item.note)}</div>
+                        <div class="poster-tags">
+                          <span class="poster-tag">收藏备用</span>
+                          <span class="poster-tag">到店清单</span>
+                          <span class="poster-tag">真实体验</span>
+                        </div>
+                      </div>
                       <div class="poster-sticker">${index === 0 ? "封面" : `第 ${index + 1} 张`}</div>
                     </div>
                   ` : `
@@ -1607,14 +1671,12 @@
         const palette = palettes[index % palettes.length];
 
         if (item.photo?.dataUrl) {
-          const img = await loadCanvasImage(item.photo.dataUrl);
+          const img = await loadCanvasImage(item.photo.generatedUrl || item.photo.dataUrl);
           drawCoverImage(ctx, img, 0, 0, canvas.width, canvas.height);
-          ctx.fillStyle = "rgba(255,255,255,.05)";
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
           const gradient = ctx.createLinearGradient(0, 300, 0, 1200);
-          gradient.addColorStop(0, "rgba(0,0,0,.04)");
-          gradient.addColorStop(.52, "rgba(0,0,0,.18)");
-          gradient.addColorStop(1, "rgba(0,0,0,.82)");
+          gradient.addColorStop(0, "rgba(0,0,0,.06)");
+          gradient.addColorStop(.56, "rgba(0,0,0,.02)");
+          gradient.addColorStop(1, "rgba(0,0,0,.28)");
           ctx.fillStyle = gradient;
           ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -1623,7 +1685,7 @@
           ctx.fill();
           ctx.fillStyle = "#111111";
           ctx.font = "900 23px Microsoft YaHei, sans-serif";
-          ctx.fillText("真实到店图", 78, 83);
+          ctx.fillText(item.photo.generatedUrl ? "混元优化图" : "真实到店图", 78, 83);
 
           ctx.fillStyle = "#ff2442";
           roundRect(ctx, 54, 118, 160, 48, 24);
@@ -1643,22 +1705,31 @@
           ctx.fillText(index === 0 ? "封面钩子" : `第 ${index + 1} 张`, 0, 0);
           ctx.restore();
 
-          ctx.fillStyle = "#ffffff";
-          drawWrappedText(ctx, shortPosterTitle(item, index), 58, 820, 780, 70, "900 58px Microsoft YaHei, sans-serif", 4);
+          ctx.fillStyle = "rgba(255,255,255,.94)";
+          roundRect(ctx, 54, 830, 792, 284, 28);
+          ctx.fill();
+          ctx.fillStyle = "#111111";
+          drawWrappedText(ctx, shortPosterTitle(item, index), 86, 900, 720, 62, "900 52px Microsoft YaHei, sans-serif", 3);
 
-          ctx.fillStyle = "rgba(255,255,255,.92)";
-          drawWrappedText(ctx, item.note || item.visual || "保留真实感，加清楚价格、位置和到店理由。", 58, 1040, 750, 34, "500 27px Microsoft YaHei, sans-serif", 3);
+          ctx.fillStyle = "#4b5563";
+          drawWrappedText(ctx, item.note || item.visual || "真实实拍图，加清楚价格、位置和到店理由。", 86, 1030, 700, 32, "500 26px Microsoft YaHei, sans-serif", 2);
 
-          ctx.strokeStyle = "#fff100";
-          ctx.lineWidth = 10;
-          ctx.beginPath();
-          ctx.moveTo(58, 996);
-          ctx.lineTo(260, 996);
-          ctx.stroke();
+          const tags = ["收藏备用", "到店清单", "真实体验"];
+          let tagX = 86;
+          ctx.font = "900 22px Microsoft YaHei, sans-serif";
+          for (const tag of tags) {
+            const w = ctx.measureText(tag).width + 34;
+            ctx.fillStyle = "#fff1f3";
+            roundRect(ctx, tagX, 1066, w, 42, 21);
+            ctx.fill();
+            ctx.fillStyle = "#b42318";
+            ctx.fillText(tag, tagX + 17, 1094);
+            tagX += w + 12;
+          }
 
           ctx.fillStyle = "rgba(255,255,255,.86)";
           ctx.font = "900 24px Microsoft YaHei, sans-serif";
-          ctx.fillText("特别想-Lab", 58, 1160);
+          ctx.fillText("特别想-Lab", 58, 1162);
           return canvas.toBlob(blob => resolve(blob), "image/jpeg", 0.94);
         }
 

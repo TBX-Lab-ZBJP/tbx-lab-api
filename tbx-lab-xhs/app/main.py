@@ -1,3 +1,6 @@
+import datetime
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -58,6 +61,13 @@ class DraftRequest(BaseModel):
 
 class ScanRequest(BaseModel):
     text: str = ""
+
+
+class ImageFactoryRequest(BaseModel):
+    title: str = ""
+    material: str = ""
+    images: list[dict[str, Any]] = []
+    photos: list[dict[str, Any]] = []
 
 
 @app.get("/")
@@ -215,6 +225,27 @@ async def draft(payload: DraftRequest) -> dict[str, Any]:
     return result
 
 
+@app.post("/api/v1/xhs/image-factory")
+async def image_factory(payload: ImageFactoryRequest) -> dict[str, Any]:
+    if os.getenv("HUNYUAN_IMAGE_ENABLED", "0").strip() != "1":
+        return {"provider": "local_layout", "items": []}
+
+    photos = [photo for photo in payload.photos[:9] if str(photo.get("dataUrl", "")).startswith("data:image/")]
+    if not photos:
+        return {"provider": "hunyuan_aiart", "items": []}
+
+    items = []
+    for index, photo in enumerate(photos):
+        plan = payload.images[index % len(payload.images)] if payload.images else {}
+        try:
+            result_image = await call_hunyuan_image_to_image(photo, plan, payload, index)
+        except Exception as exc:
+            items.append({"index": index, "error": str(exc)})
+            continue
+        items.append({"index": index, "image": result_image})
+    return {"provider": "hunyuan_aiart", "items": items}
+
+
 async def generate_with_hunyuan(user_input: dict[str, Any]) -> dict[str, Any]:
     api_key = os.getenv("HUNYUAN_API_KEY", "").strip()
     if not api_key:
@@ -232,7 +263,11 @@ title: 字符串
 body: 字符串，包含完整正文
 tags: 字符串数组，8 到 12 个标签，不带 # 号
 firstComment: 字符串
-images: 数组，每项包含 page、text、visual、note
+images: 数组，每项包含 page、text、visual、note。这里不是图片建议，而是直接可渲染到图片上的成品页内容：
+- page: 页面角色，如 封面、环境页、房型页、价格页、位置页、预约页、避坑页
+- text: 直接压在图片上的大标题，12 到 22 字，像小红书真实封面文案
+- visual: 本页使用的排版模板和图片角色，写给系统渲染用，不要写给老板看的建议
+- note: 直接压在图片上的副标题或卖点短句，18 到 34 字
 
 安全要求：
 不声称是字节、抖音、小红书官方或官方服务商。
@@ -241,14 +276,14 @@ images: 数组，每项包含 page、text、visual、note
 不编造具体店名、地址、价格、成交数据。
 语气要像懂本地生活转化的运营顾问，清楚、克制、可执行。
 文案必须是填空式可控结构，不要像全自动生成；尽量体现地点、品类、情绪、钩子、价格锚点、到店理由。
-图片方案不要做 AI 生图，不要写“生成精美图片”。核心是把老板手机里的烂图变成可发布图：
-1. 智能修图：曝光、色温、食物饱和度、房间通透感；
-2. 小红书爆款套版：菜品/房间图加价签、特色标注、九宫格场景图；
-3. 图文匹配检测：判断图片能不能证明文案里的卖点、价格、位置和规则。
-如果用户上传了图片，必须基于上传图片判断：哪张适合封面、哪张适合九宫格、哪张需要重拍、哪张适合加价签/路线/预约规则。不要假设不存在的图片内容。
+图片工厂不是建议文档，而是直接生成一套可发布的小红书图文笔记成品页内容。
+核心是把老板手机实拍图变成“真实 + 种草感”的图文：清晰实拍图、强钩子标题、价格/位置/到店理由标签、九宫格节奏、评论区承接。
+不要输出“建议加”“可以写”“适合放”这类建议式句子。要输出能直接放在图片上的标题和短句。
+如果只有图片元数据，请根据标题、行业、填空信息、图片数量/横竖图/亮度来分配页面角色；不要声称看清了具体画面细节。
+成品页节奏建议：第 1 张封面强钩子，第 2-4 张展示真实场景和核心卖点，第 5 张价格/套餐/性价比，第 6 张位置/路线/预约规则，第 7-9 张避坑或到店清单。
 最后给出弱数据监控建议：阅读、收藏、私信/评论、团购点击、预估到店或核销。
 """.strip()
-    system_prompt += "\n如果 photos 里只有图片元数据，请只根据数量、横竖图、亮度和文件名给出图片工厂建议，不要声称已经看清图片具体内容。"
+    system_prompt += "\n再次强调：images 必须是可直接渲染成图片的成品文案，不是执行建议。"
     enable_vision = os.getenv("HUNYUAN_ENABLE_VISION", "0").strip() == "1"
     clean_input = {**user_input, "photos": photo_metadata(user_input.get("photos", []))}
     user_content: str | list[dict[str, Any]]
@@ -308,6 +343,99 @@ def photo_metadata(photos: Any) -> list[dict[str, Any]]:
             "brightness": photo.get("brightness", ""),
         })
     return metadata
+
+
+async def call_hunyuan_image_to_image(
+    photo: dict[str, Any],
+    plan: dict[str, Any],
+    payload: ImageFactoryRequest,
+    index: int,
+) -> str:
+    data_url = str(photo.get("dataUrl", ""))
+    image_base64 = re.sub(r"^data:image/[^;]+;base64,", "", data_url)
+    prompt = build_image_prompt(plan, payload, index)
+    body = {
+        "InputImage": image_base64,
+        "Prompt": prompt,
+        "RspImgType": "base64",
+        "Resolution": "768:1024",
+    }
+    response = await tencent_tc3_request("ImageToImage", body)
+    image = response.get("Response", {}).get("ResultImage")
+    if not image:
+        raise RuntimeError(response.get("Response", {}).get("Error", {}).get("Message", "混元生图未返回图片"))
+    return f"data:image/jpeg;base64,{image}"
+
+
+def build_image_prompt(plan: dict[str, Any], payload: ImageFactoryRequest, index: int) -> str:
+    page = str(plan.get("page") or f"第{index + 1}张")
+    title = str(plan.get("text") or payload.title)[:40]
+    note = str(plan.get("note") or payload.material)[:50]
+    material = payload.material[:80]
+    return (
+        "小红书本地生活真实种草笔记配图，保留商家实拍质感，真实自然，不要高端假大片。"
+        "优化曝光、色温、通透感和构图，适合餐饮或酒旅老板发布。"
+        f"页面角色：{page}。核心卖点：{title}。补充信息：{note}。店铺信息：{material}。"
+        "画面干净、有到店转化感、手机实拍风格、真实生活感，不要生成文字，不要水印，不要Logo。"
+    )[:900]
+
+
+async def tencent_tc3_request(action: str, body: dict[str, Any]) -> dict[str, Any]:
+    secret_id = os.getenv("TENCENTCLOUD_SECRET_ID", "").strip()
+    secret_key = os.getenv("TENCENTCLOUD_SECRET_KEY", "").strip()
+    if not secret_id or not secret_key:
+        raise RuntimeError("未配置 TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY")
+
+    service = "aiart"
+    host = "aiart.tencentcloudapi.com"
+    region = os.getenv("TENCENTCLOUD_REGION", "ap-guangzhou")
+    version = "2022-12-29"
+    payload = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+    now = datetime.datetime.utcnow()
+    timestamp = int(now.timestamp())
+    date = now.strftime("%Y-%m-%d")
+
+    http_request_method = "POST"
+    canonical_uri = "/"
+    canonical_querystring = ""
+    canonical_headers = f"content-type:application/json; charset=utf-8\nhost:{host}\nx-tc-action:{action.lower()}\n"
+    signed_headers = "content-type;host;x-tc-action"
+    hashed_request_payload = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    canonical_request = "\n".join([
+        http_request_method,
+        canonical_uri,
+        canonical_querystring,
+        canonical_headers,
+        signed_headers,
+        hashed_request_payload,
+    ])
+
+    algorithm = "TC3-HMAC-SHA256"
+    credential_scope = f"{date}/{service}/tc3_request"
+    hashed_canonical_request = hashlib.sha256(canonical_request.encode("utf-8")).hexdigest()
+    string_to_sign = "\n".join([algorithm, str(timestamp), credential_scope, hashed_canonical_request])
+    secret_date = hmac.new(("TC3" + secret_key).encode("utf-8"), date.encode("utf-8"), hashlib.sha256).digest()
+    secret_service = hmac.new(secret_date, service.encode("utf-8"), hashlib.sha256).digest()
+    secret_signing = hmac.new(secret_service, b"tc3_request", hashlib.sha256).digest()
+    signature = hmac.new(secret_signing, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+    authorization = (
+        f"{algorithm} Credential={secret_id}/{credential_scope}, "
+        f"SignedHeaders={signed_headers}, Signature={signature}"
+    )
+
+    headers = {
+        "Authorization": authorization,
+        "Content-Type": "application/json; charset=utf-8",
+        "Host": host,
+        "X-TC-Action": action,
+        "X-TC-Timestamp": str(timestamp),
+        "X-TC-Version": version,
+        "X-TC-Region": region,
+    }
+    async with httpx.AsyncClient(timeout=120) as client:
+        response = await client.post(f"https://{host}", headers=headers, content=payload.encode("utf-8"))
+    response.raise_for_status()
+    return response.json()
 
 
 async def generate_raw_json_with_hunyuan(prompt: str, user_input: dict[str, Any]) -> dict[str, Any]:
@@ -388,11 +516,11 @@ def fixed_benchmark() -> dict[str, Any]:
 
 def image_plan(title: str) -> list[dict[str, str]]:
     return [
-        {"page": "封面修图", "text": title, "visual": "从老板相册选 1 张最真实的菜品/房间/门头图，调亮曝光、校正色温、压 12-18 字到店钩子。", "note": "目标不是漂亮，是一眼真实、一眼知道为什么来。"},
-        {"page": "价签标注", "text": "价格和卖点直接标出来", "visual": "在原图上加价签、套餐包含、适合几人、使用时间，不遮住主体。", "note": "解决用户值不值得来的判断。"},
-        {"page": "九宫格场景", "text": "让顾客像提前到店", "visual": "用 6-9 张真实图：环境、招牌、细节、菜单/团购页、停车或路线、顾客视角。", "note": "小红书更吃真实场景，不吃假精致。"},
-        {"page": "对比图", "text": "同价位怎么选", "visual": "套餐 A/B、平日/周末、单点/套餐做对比，加箭头和圈点标注。", "note": "把选择理由讲清楚。"},
-        {"page": "图文匹配", "text": "图片要证明文案", "visual": "检查图片是否能证明菜名/房型、价格、位置、预约规则和到店理由。", "note": "不匹配就换图或改文案，避免用户不信。"},
+        {"page": "封面", "text": title[:28], "visual": "实拍图全屏封面 + 底部白色标题卡 + 价格/位置标签", "note": "一眼看懂卖点，先让用户想收藏"},
+        {"page": "场景", "text": "到店第一眼就很有感觉", "visual": "实拍图大图展示 + 左上角真实到店标签", "note": "用真实环境建立信任感"},
+        {"page": "卖点", "text": "这几个细节最值得看", "visual": "实拍图 + 三个手写感卖点贴纸", "note": "把房型/菜品/服务亮点讲清楚"},
+        {"page": "价格", "text": "这个价位怎么选更值", "visual": "实拍图 + 价格锚点卡片 + 套餐包含条", "note": "让顾客判断值不值得下单"},
+        {"page": "清单", "text": "来之前先看这张清单", "visual": "实拍图 + 收藏清单式信息卡", "note": "位置、预约、核销和适合人群一次说清"},
     ]
 
 
