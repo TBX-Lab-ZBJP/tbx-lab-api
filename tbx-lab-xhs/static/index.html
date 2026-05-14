@@ -274,6 +274,33 @@
       line-height: 1.65;
       margin: 0;
     }
+    .scan-result-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 18px;
+      line-height: 1.75;
+      font-size: 14px;
+    }
+    .scan-result-card.pass {
+      border-color: #12b76a;
+      background: #f6fef9;
+    }
+    .scan-result-card.warn {
+      border-color: #f79009;
+      background: #fffcf5;
+    }
+    .scan-status {
+      font-size: 22px;
+      font-weight: 950;
+      margin-bottom: 10px;
+    }
+    .scan-status.pass { color: #027a48; }
+    .scan-status.warn { color: #b54708; }
+    .scan-list {
+      margin: 10px 0 0;
+      padding-left: 18px;
+    }
     .output-tabs {
       display: flex;
       gap: 8px;
@@ -330,19 +357,52 @@
     }
     .image-preview {
       min-height: 138px;
-      display: grid;
-      place-items: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
       text-align: center;
-      background: #3157ff;
-      color: #ffffff;
+      background: #fff4e8;
+      color: #1f2937;
       padding: 18px;
       font-size: 20px;
       font-weight: 950;
       line-height: 1.3;
     }
     .image-card:nth-child(2n) .image-preview {
-      background: #8f8f8f;
-      color: #111111;
+      background: #e9f8ef;
+      color: #123326;
+    }
+    .image-card:nth-child(3n) .image-preview {
+      background: #fff6bf;
+      color: #312600;
+    }
+    .image-card:nth-child(4n) .image-preview {
+      background: #f5efff;
+      color: #2f1a4f;
+    }
+    .image-card:nth-child(5n) .image-preview {
+      background: #eef6ff;
+      color: #11294a;
+    }
+    .image-preview::before {
+      content: "图文排版";
+      align-self: flex-start;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      padding: 4px 9px;
+      font-size: 12px;
+      font-weight: 900;
+      opacity: .75;
+    }
+    .image-preview::after {
+      content: "照片/截图位 + 大字标题 + 圈点标注";
+      align-self: stretch;
+      border: 1px dashed currentColor;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 12px;
+      font-weight: 800;
+      opacity: .72;
     }
     .image-meta {
       padding: 12px;
@@ -430,33 +490,66 @@
     .xhs-card-art {
       width: 100%;
       aspect-ratio: 3 / 4;
-      border-radius: 22px;
-      background: #3157ff;
-      color: #ffffff;
-      display: grid;
-      align-content: center;
-      gap: 18px;
-      padding: 34px;
+      border-radius: 14px;
+      background: #fff4e8;
+      color: #1f2937;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 14px;
+      padding: 28px;
       position: relative;
       overflow: hidden;
     }
     .xhs-slide:nth-child(even) .xhs-card-art {
-      background: #f2f2f2;
-      color: #111111;
-      border: 1px solid #d4d4d4;
+      background: #e9f8ef;
+      color: #123326;
+      border: 1px solid #b8e6c8;
+    }
+    .xhs-slide:nth-child(3n) .xhs-card-art {
+      background: #fff6bf;
+      color: #312600;
+      border: 1px solid #f3dd67;
+    }
+    .xhs-slide:nth-child(4n) .xhs-card-art {
+      background: #f5efff;
+      color: #2f1a4f;
+      border: 1px solid #ddccff;
+    }
+    .xhs-card-art::before {
+      content: "";
+      height: 42%;
+      border: 2px dashed currentColor;
+      border-radius: 12px;
+      opacity: .35;
+      background: rgba(255,255,255,.45);
+    }
+    .xhs-card-art::after {
+      content: "圈点标注 · 对比箭头 · 重点贴纸";
+      position: absolute;
+      left: 24px;
+      right: 24px;
+      bottom: 50px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(255,255,255,.72);
+      font-size: 12px;
+      font-weight: 900;
+      text-align: center;
     }
     .xhs-card-kicker {
       display: inline-block;
       width: fit-content;
-      background: rgba(255,255,255,.22);
+      background: rgba(255,255,255,.75);
+      border: 1px solid currentColor;
       border-radius: 999px;
       padding: 7px 13px;
       font-weight: 900;
       font-size: 13px;
     }
     .xhs-slide:nth-child(even) .xhs-card-kicker {
-      background: #3157ff;
-      color: #ffffff;
+      background: rgba(255,255,255,.75);
+      color: inherit;
     }
     .xhs-card-title {
       font-size: 34px;
@@ -623,7 +716,7 @@
       <div class="topbar">
         <div>
           <h1>特别想-Lab小红书笔记助手</h1>
-          <div class="muted">先从小红书/抖音采集 30 个热点标题，员工勾选后，再生成威海本地化笔记。</div>
+          <div class="muted">面向所有小红书内容运营作者：输入赛道和关键词，采集选题后生成可审核的图文笔记。</div>
         </div>
         <span class="badge">特别想-Lab · 内部专属</span>
       </div>
@@ -648,23 +741,18 @@
             </div>
             <label class="field">
               <span>业务赛道</span>
-              <select id="lane">
-                <option>餐饮</option>
-                <option>酒旅</option>
-                <option>综合</option>
-                <option>本地生活全板块</option>
-              </select>
+              <input id="lane" value="" placeholder="例如：美妆、母婴、职场、穿搭、教育、本地生活">
             </label>
             <label class="field">
               <span>采集关键词</span>
-              <input id="hotKeyword" value="威海餐饮 抖音团购 直播没流量">
+              <input id="hotKeyword" value="" placeholder="例如：通勤穿搭 小个子显高 / 新手妈妈辅食 / 小红书运营涨粉">
             </label>
           </div>
         </div>
 
         <div class="card" style="margin-top:16px">
           <h2>员工第一次审核</h2>
-          <div class="muted">勾选适合特别想-Lab内部内容标准、能改成威海本地内容的标题。未勾选标题不会进入文案生成。</div>
+          <div class="muted">勾选适合当前账号定位、能改成原创内容的标题。未勾选标题不会进入文案生成。</div>
           <div style="height:12px"></div>
           <div class="actions">
             <button class="btn secondary" onclick="approveTitles()">确认勾选，进入生产池</button>
@@ -712,11 +800,11 @@
             </label>
             <div class="card" style="background:#f8f8f8;margin-bottom:13px">
               <h3>后台固定参考方向</h3>
-              <div class="muted">员工不用找对标、不用上传参考图。系统统一按“教培对标账号的信息密度 + 小红书图文节奏 + 特别想-Lab 蓝/灰/黑/白 VI”生成。</div>
+              <div class="muted">系统参考小红书常见热门图文结构：封面强钩子、照片/截图位、圈点标注、对比箭头、清单总结和评论区承接。</div>
             </div>
             <label class="field">
-              <span>真实威海素材</span>
-              <textarea id="material">员工已核实：暂不填具体店名，只使用环翠区、经区、高区等威海地域信息。</textarea>
+              <span>账号素材 / 产品信息 / 用户痛点</span>
+              <textarea id="material" placeholder="填写账号定位、产品卖点、用户痛点、真实案例、禁用表达等。"></textarea>
             </label>
             <button class="btn" onclick="generate()">生成待审笔记</button>
           </div>
@@ -746,7 +834,7 @@
           </div>
           <div class="card">
             <h2>扫描结果</h2>
-            <pre id="scanOut">等待扫描。</pre>
+            <div id="scanOut" class="scan-result-card">等待扫描。</div>
           </div>
         </div>
       </section>
@@ -920,6 +1008,8 @@
           title,
           outputType,
           noteShape: outputType,
+          lane: document.getElementById("lane").value,
+          keyword: document.getElementById("hotKeyword").value,
           material,
           framework: "避坑警告"
         });
@@ -965,38 +1055,38 @@
     }
 
     function buildImagePlan(title) {
-      const layoutNote = "后台固定参考方向：教培类对标账号的信息密度、小红书图文分屏节奏、特别想-Lab蓝/灰/黑/白版式。";
-      const benchmarkNote = "参考标题钩子、信息密度、分屏节奏和转化承接方式，但不照搬原文和图片。";
+      const layoutNote = "参考小红书热门图文：真实照片/截图位、大字标题、圈点标注、对比箭头、步骤清单和总结卡。";
+      const benchmarkNote = "只参考结构和信息层级，不复制原文和图片。";
       return [
         {
           page: "封面",
           text: title,
-          visual: `${layoutNote} ${benchmarkNote} 封面突出主标题，背景不放门店假图。`,
+          visual: `${layoutNote} ${benchmarkNote} 封面用真实场景图或截图做底，标题压上半区，右侧加 2 个圈点标注。`,
           note: "用于提高点击，文字控制在 18-24 字。"
         },
         {
           page: "第 2 页",
-          text: "别先投流，先看套餐",
-          visual: "灰底黑字，左侧放“错误顺序”，右侧放“正确顺序”。",
-          note: "强调认知反差。"
+          text: "先看这 3 个信号",
+          visual: "三宫格清单，每格配一个截图局部、图标或手写圈注。",
+          note: "让用户快速判断自己是否中招。"
         },
         {
           page: "第 3 页",
-          text: "威海本地内容，要有本地钩子",
-          visual: "白底，蓝色条突出环翠区/经区/高区等地域词。",
-          note: "只用真实地域，不编造店名。"
+          text: "常见错误 vs 正确做法",
+          visual: "左右对比排版，中间用箭头连接，错误项浅红，正确项浅绿。",
+          note: "制造收藏价值。"
         },
         {
           page: "第 4 页",
-          text: "播放量不是结果，到店才是",
-          visual: "用三段式数据框：播放、点击、核销。",
-          note: "为后续复盘工具做承接。"
+          text: "照着改的步骤",
+          visual: "步骤时间线排版，配重点贴纸和小图标。",
+          note: "让内容更可执行。"
         },
         {
           page: "第 5 页",
-          text: "评论扣「资料」，先免费试一次",
-          visual: "蓝色 CTA 条，底部留员工审核备注位。",
-          note: "只引 L0 免费试用或 ¥99 体验课。"
+          text: "评论区拿模板",
+          visual: "总结卡 + 评论区承接，不做站外导流。",
+          note: "只做平台内互动承接。"
         }
       ];
     }
@@ -1158,46 +1248,66 @@
         canvas.width = 900;
         canvas.height = 1200;
         const ctx = canvas.getContext("2d");
-        const blue = "#3157ff";
-        const gray = "#8f8f8f";
-        const isBlue = index % 2 === 0;
+        const palettes = [
+          { bg: "#fff4e8", ink: "#1f2937", accent: "#ff6b35" },
+          { bg: "#e9f8ef", ink: "#123326", accent: "#16a34a" },
+          { bg: "#fff6bf", ink: "#312600", accent: "#d97706" },
+          { bg: "#f5efff", ink: "#2f1a4f", accent: "#7c3aed" },
+          { bg: "#eef6ff", ink: "#11294a", accent: "#2563eb" }
+        ];
+        const palette = palettes[index % palettes.length];
 
-        ctx.fillStyle = isBlue ? blue : "#ffffff";
+        ctx.fillStyle = palette.bg;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        if (!isBlue) {
-          ctx.strokeStyle = "#d4d4d4";
-          ctx.lineWidth = 8;
-          ctx.strokeRect(24, 24, canvas.width - 48, canvas.height - 48);
-        }
+        ctx.strokeStyle = palette.accent;
+        ctx.lineWidth = 8;
+        ctx.strokeRect(28, 28, canvas.width - 56, canvas.height - 56);
 
-        ctx.fillStyle = isBlue ? "#ffffff" : "#111111";
+        ctx.fillStyle = palette.ink;
         ctx.font = "900 42px Microsoft YaHei, sans-serif";
         ctx.fillText("特别想-Lab", 64, 92);
 
-        ctx.fillStyle = isBlue ? "rgba(255,255,255,.22)" : blue;
+        ctx.fillStyle = "#ffffff";
+        roundRect(ctx, 64, 128, 760, 360, 22);
+        ctx.fill();
+        ctx.strokeStyle = palette.accent;
+        ctx.setLineDash([16, 12]);
+        ctx.lineWidth = 4;
+        roundRect(ctx, 92, 158, 704, 300, 18);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = palette.accent;
         roundRect(ctx, 64, 132, 190, 54, 27);
         ctx.fill();
         ctx.fillStyle = "#ffffff";
         ctx.font = "900 26px Microsoft YaHei, sans-serif";
         ctx.fillText(item.page, 92, 168);
 
-        ctx.fillStyle = isBlue ? "#ffffff" : "#111111";
-        drawWrappedText(ctx, item.text, 64, 330, 760, 76, "900 66px Microsoft YaHei, sans-serif");
+        ctx.fillStyle = palette.ink;
+        drawWrappedText(ctx, item.text, 64, 610, 760, 72, "900 62px Microsoft YaHei, sans-serif");
 
-        ctx.fillStyle = isBlue ? "rgba(255,255,255,.9)" : "#666666";
-        drawWrappedText(ctx, item.note, 64, 810, 740, 42, "400 32px Microsoft YaHei, sans-serif");
+        ctx.fillStyle = palette.accent;
+        roundRect(ctx, 64, 880, 760, 86, 18);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "900 30px Microsoft YaHei, sans-serif";
+        ctx.fillText("圈点标注 · 对比箭头 · 重点贴纸", 110, 934);
 
-        ctx.strokeStyle = isBlue ? "rgba(255,255,255,.65)" : blue;
+        ctx.fillStyle = "#4b5563";
+        drawWrappedText(ctx, item.note, 64, 1018, 740, 38, "400 28px Microsoft YaHei, sans-serif");
+
+        ctx.strokeStyle = palette.accent;
         ctx.lineWidth = 8;
         ctx.beginPath();
-        ctx.moveTo(64, 1080);
-        ctx.lineTo(250, 1080);
+        ctx.moveTo(64, 1120);
+        ctx.lineTo(250, 1120);
         ctx.stroke();
 
-        ctx.fillStyle = isBlue ? "rgba(255,255,255,.9)" : gray;
+        ctx.fillStyle = palette.ink;
         ctx.font = "900 30px Microsoft YaHei, sans-serif";
-        ctx.fillText("本地生活内容工具", 64, 1138);
+        ctx.fillText("小红书内容工具", 64, 1162);
 
         canvas.toBlob(blob => resolve(blob), "image/jpeg", 0.94);
       });
@@ -1277,14 +1387,30 @@
 
     async function scan() {
       const text = document.getElementById("scanText").value;
+      document.getElementById("scanOut").className = "scan-result-card";
       document.getElementById("scanOut").textContent = "正在扫描...";
       try {
         const result = await apiPost("/api/v1/xhs/scan", { text });
-        document.getElementById("scanOut").textContent = JSON.stringify(result, null, 2);
+        renderScanResult(result);
       } catch (error) {
-        document.getElementById("scanOut").textContent = JSON.stringify(scanText(text), null, 2);
+        renderScanResult(scanText(text));
         alert(error.message || "后端扫描失败，已显示本地扫描结果");
       }
+    }
+
+    function renderScanResult(result) {
+      const passed = !!result.passed;
+      const terms = result.risk_terms || result.hits || [];
+      const suggestions = result.suggestions || [];
+      const box = document.getElementById("scanOut");
+      box.className = `scan-result-card ${passed ? "pass" : "warn"}`;
+      box.innerHTML = `
+        <div class="scan-status ${passed ? "pass" : "warn"}">${passed ? "扫描通过" : "发现风险"}</div>
+        <div>${passed ? "未发现内置身份红线、价格红线、效果承诺或站外导流风险。" : `命中风险词：<strong>${terms.map(escapeHtml).join("、") || "需人工复核"}</strong>`}</div>
+        <ul class="scan-list">
+          ${(suggestions.length ? suggestions : ["发布前仍需人工复核事实、价格、品牌身份和案例真实性。"]).map(item => `<li>${escapeHtml(item)}</li>`).join("")}
+        </ul>
+      `;
     }
   </script>
 </body>

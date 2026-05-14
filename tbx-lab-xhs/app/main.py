@@ -14,8 +14,8 @@ from pydantic import BaseModel
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
 
-HUNYUAN_BASE_URL = "https://api.hunyuan.cloud.tencent.com/v1"
-HUNYUAN_MODEL = "hunyuan-turbos-latest"
+HUNYUAN_BASE_URL = "https://tokenhub.tencentmaas.com/v1"
+HUNYUAN_MODEL = "hunyuan-2.0-instruct-20251111"
 
 RED_LINES = [
     "字节",
@@ -41,8 +41,8 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 class HotTitleRequest(BaseModel):
     platform: str = "小红书"
-    lane: str = "干货避坑"
-    keyword: str = "威海餐饮 抖音团购 直播没流量"
+    lane: str = ""
+    keyword: str = ""
 
 
 class DraftRequest(BaseModel):
@@ -50,6 +50,8 @@ class DraftRequest(BaseModel):
     outputType: str = "标准文案"
     noteShape: str = "干货避坑"
     framework: str = "避坑警告"
+    lane: str = ""
+    keyword: str = ""
     material: str = ""
 
 
@@ -109,26 +111,29 @@ async def hot_titles(payload: HotTitleRequest) -> dict[str, Any]:
         "为什么你的视频有播放却没人到店",
         "本地团购套餐这样设计更容易核销",
         "直播间没人停留，先改这几个动作",
-        "老板别再把钱全花在投流上",
-        "小店做同城内容最容易踩的坑",
-        "低价套餐不等于引流款",
-        "没有达人预算，也能做本地内容",
-        "团购卖不动，问题可能不在流量",
-        "直播开场 30 秒决定留人率",
-        "门店账号冷启动先别急着发广告",
+        "为什么别人收藏高，你的内容却没人互动",
+        "新账号冷启动先别急着追热点",
+        "爆款笔记标题里常见的 3 个结构",
+        "小红书内容容易没流量的几个细节",
+        "封面和正文不匹配，用户会直接划走",
+        "账号定位不清晰，越更越乱",
+        "同样的选题，为什么别人更容易出数据",
     ]
-    directions = ["干货避坑", "案例拆解", "直播转化", "团购套餐", "老板日常"]
+    directions = ["干货避坑", "案例拆解", "清单教程", "经验复盘", "选题灵感"]
     platforms = [payload.platform or "小红书", "抖音"]
+    lane = payload.lane.strip() or "小红书内容运营"
+    keyword = payload.keyword.strip() or lane
     items = []
     for index in range(30):
-        title = f"{'威海老板' if index % 2 == 0 else '本地生活商家'}{[3, 5, 7, 9][index % 4]}个{seeds[index % len(seeds)]}"
+        prefix = lane if index % 2 == 0 else keyword
+        title = f"{prefix}{[3, 5, 7, 9][index % 4]}个{seeds[index % len(seeds)]}"
         items.append({
             "id": f"hot_{index + 1}",
             "title": title,
             "platform": platforms[index % len(platforms)],
             "heat": 72 + ((index * 7) % 27),
-            "direction": payload.lane or directions[index % len(directions)],
-            "keyword": payload.keyword,
+            "direction": directions[index % len(directions)],
+            "keyword": keyword,
         })
     return {"count": len(items), "items": items}
 
@@ -150,7 +155,7 @@ async def draft(payload: DraftRequest) -> dict[str, Any]:
             raise HTTPException(status_code=502, detail=f"国内大模型调用失败：{exc}") from exc
 
     result["title"] = result.get("title") or payload.title
-    result["firstComment"] = result.get("firstComment") or result.get("first_comment") or "想先试一次的老板，评论扣「资料」。"
+    result["firstComment"] = result.get("firstComment") or result.get("first_comment") or "想要结构参考的朋友，评论扣「模板」。"
     result["tags"] = normalize_tags(result.get("tags"))
     result["benchmark"] = result.get("benchmark") or fixed_benchmark()
     result["images"] = result.get("images") or image_plan(result["title"])
@@ -167,8 +172,8 @@ async def generate_with_hunyuan(user_input: dict[str, Any]) -> dict[str, Any]:
     base_url = os.getenv("HUNYUAN_BASE_URL", HUNYUAN_BASE_URL).rstrip("/")
     model = os.getenv("HUNYUAN_MODEL", HUNYUAN_MODEL)
     system_prompt = """
-你是“特别想-Lab”的小红书内容智能发布平台，服务对象是威海本地生活商家。
-你要生成员工可审核、可手动发布的小红书图文笔记。
+你是“特别想-Lab”的小红书内容智能发布平台，服务对象是所有小红书内容运营作者。
+你要根据用户填写的业务赛道、关键词、账号素材和用户痛点，生成可审核、可手动发布的小红书图文笔记。
 
 必须输出严格 JSON，不要 Markdown，不要代码块。字段：
 title: 字符串
@@ -182,7 +187,8 @@ images: 数组，每项包含 page、text、visual、note
 不承诺 GMV、ROI、爆单、第一、唯一、全网最低。
 不诱导扫码、加微信或站外私聊。
 不编造具体店名、地址、价格、成交数据。
-语气要像懂本地商家的运营顾问，清楚、克制、可执行。
+语气要像懂小红书增长和内容运营的策划顾问，清楚、克制、可执行。
+图文方案要参考小红书热门图文排版：真实照片/截图位、大字标题、圈点标注、步骤清单、对比箭头、重点贴纸、评论区承接。不要风格单一，不要全蓝色模板。
 """.strip()
     request_body = {
         "model": model,
@@ -191,8 +197,9 @@ images: 数组，每项包含 page、text、visual、note
             {"role": "user", "content": json.dumps(user_input, ensure_ascii=False)},
         ],
         "temperature": 0.45,
-        "enable_enhancement": True,
     }
+    if "api.hunyuan.cloud.tencent.com" in base_url:
+        request_body["enable_enhancement"] = True
     async with httpx.AsyncClient(timeout=90) as client:
         response = await client.post(
             f"{base_url}/chat/completions",
@@ -218,15 +225,15 @@ def scan_text(text: str) -> dict[str, Any]:
         "passed": len(hits) == 0,
         "risk_terms": hits,
         "score": max(0, 100 - len(hits) * 15),
-        "suggestions": ["删除命中红线", "改成评论扣关键词或免费试用承接"] if hits else ["可进入员工事实审核"],
+        "suggestions": ["删除或替换命中风险词", "避免承诺效果、官方身份或站外导流", "改成平台内评论区关键词承接"] if hits else ["未发现内置风险词", "发布前仍需人工复核事实、价格、品牌身份和案例真实性"],
     }
 
 
 def normalize_tags(tags: Any) -> list[str]:
     if not isinstance(tags, list):
-        return ["威海本地生活", "威海餐饮", "实体店老板", "抖音团购", "本地生活运营"]
+        return ["小红书运营", "内容运营", "账号定位", "爆款笔记", "图文笔记"]
     clean = [str(tag).strip().lstrip("#") for tag in tags if str(tag).strip()]
-    return clean[:12] or ["威海本地生活", "威海餐饮", "实体店老板", "抖音团购", "本地生活运营"]
+    return clean[:12] or ["小红书运营", "内容运营", "账号定位", "爆款笔记", "图文笔记"]
 
 
 def fixed_benchmark() -> dict[str, Any]:
@@ -239,33 +246,33 @@ def fixed_benchmark() -> dict[str, Any]:
 
 def image_plan(title: str) -> list[dict[str, str]]:
     return [
-        {"page": "封面", "text": title, "visual": "蓝白版式，突出主标题，背景不放门店假图。", "note": "用于提高点击，文字控制在 18-24 字。"},
-        {"page": "第 2 页", "text": "别先投流，先看套餐", "visual": "灰底黑字，左侧放错误顺序，右侧放正确顺序。", "note": "强调认知反差。"},
-        {"page": "第 3 页", "text": "威海本地内容，要有本地钩子", "visual": "白底，蓝色条突出环翠区/经区/高区等地域词。", "note": "只用真实地域，不编造店名。"},
-        {"page": "第 4 页", "text": "播放量不是结果，到店才是", "visual": "三段式数据框：播放、点击、核销。", "note": "为后续复盘工具做承接。"},
-        {"page": "第 5 页", "text": "评论扣「资料」，先免费试一次", "visual": "蓝色 CTA 条，底部留员工审核备注位。", "note": "只承接免费试用或体验课。"},
+        {"page": "封面", "text": title, "visual": "真实照片或场景截图做底，大字标题压在上半区，右侧加 2 个圈点标注。", "note": "强钩子，控制在 18-24 字。"},
+        {"page": "第 2 页", "text": "先看这 3 个信号", "visual": "三宫格清单，每格配一个小图标或截图局部。", "note": "让用户快速判断自己是否中招。"},
+        {"page": "第 3 页", "text": "常见错误 vs 正确做法", "visual": "左右对比排版，中间用箭头连接，错误项用浅红，正确项用浅绿。", "note": "制造收藏价值。"},
+        {"page": "第 4 页", "text": "照着改的步骤", "visual": "步骤时间线排版，配手写圈注和重点贴纸。", "note": "让内容更可执行。"},
+        {"page": "第 5 页", "text": "评论区拿模板", "visual": "总结卡 + 评论区承接，不做站外导流。", "note": "只做平台内互动承接。"},
     ]
 
 
 def fallback_draft(payload: DraftRequest) -> dict[str, Any]:
     body = (
-        "威海很多老板做本地生活，第一步就走反了。\n\n"
-        "不是先投流，也不是先找达人，更不是看到别人爆了就照着抄一条。\n\n"
+        "很多账号做小红书内容，第一步就走反了。\n\n"
+        "不是先追热点，也不是先套爆款模板，更不是看到别人火了就照着抄一条。\n\n"
         "真正要先看的，是这 3 件事：\n\n"
-        "1. 套餐有没有到店理由\n"
-        "低价不等于引流款。如果套餐只是降价，老板很容易越卖越累。\n\n"
-        "2. 内容有没有本地钩子\n"
-        "环翠区、经区、高区的店，客群、季节、消费习惯都不一样。\n\n"
-        "3. 数据有没有复盘入口\n"
-        "播放量、点赞、收藏只是表面。更关键的是有没有人点团购、有没有人核销、有没有人愿意再来。\n\n"
+        "1. 账号定位是否清楚\n"
+        "用户一眼看不懂你是谁、解决什么问题，就很难关注。\n\n"
+        "2. 选题有没有具体场景\n"
+        "泛泛而谈很难被收藏，越具体越容易被记住。\n\n"
+        "3. 图文有没有信息层级\n"
+        "封面、截图、圈点、步骤、总结要配合，而不是一屏堆满文字。\n\n"
         f"{payload.material}\n\n"
-        "所以别急着把钱全花在投流上。先把套餐、内容、数据这三件事理顺。\n\n"
-        "评论扣「资料」，领取一次免费工具试用。"
+        "所以别急着日更。先把定位、选题、图文结构这三件事理顺。\n\n"
+        "评论扣「模板」，领取一次内容结构参考。"
     )
     return {
         "title": payload.title,
         "body": body,
-        "tags": ["威海本地生活", "威海餐饮", "实体店老板", "抖音团购", "本地生活运营"],
-        "firstComment": "想先试一次的老板，评论扣「资料」。",
+        "tags": ["小红书运营", "内容运营", "账号定位", "爆款笔记", "图文笔记"],
+        "firstComment": "想要结构参考的朋友，评论扣「模板」。",
         "images": image_plan(payload.title),
     }
