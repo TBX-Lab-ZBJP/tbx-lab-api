@@ -421,6 +421,34 @@
       background: #fafafa;
       line-height: 1.6;
     }
+    .topic-prompts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .topic-prompt {
+      border: 1px solid #e6e6e6;
+      border-radius: 8px;
+      padding: 12px;
+      background: #fafafa;
+      cursor: pointer;
+      line-height: 1.55;
+    }
+    .topic-prompt strong {
+      display: block;
+      margin-bottom: 4px;
+    }
+    .factory-note {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border: 1px solid #fedf89;
+      border-radius: 8px;
+      background: #fffaeb;
+      color: #7a2e0e;
+      font-weight: 800;
+      line-height: 1.6;
+    }
     .xhs-phone {
       width: min(430px, 100%);
       margin: 0 auto;
@@ -650,6 +678,7 @@
     }
     @media (max-width: 980px) {
       .material-pack-grid { grid-template-columns: 1fr; }
+      .topic-prompts { grid-template-columns: 1fr; }
     }
     .hidden { display: none; }
     .review-list label {
@@ -716,7 +745,7 @@
       <div class="topbar">
         <div>
           <h1>特别想-Lab小红书笔记助手</h1>
-          <div class="muted">面向所有小红书内容运营作者：输入赛道和关键词，采集选题后生成可审核的图文笔记。</div>
+          <div class="muted">面向餐饮、酒旅本地生活老板：围绕到店转化选题，生成文案和“烂图变好图”的小红书发布方案。</div>
         </div>
         <span class="badge">特别想-Lab · 内部专属</span>
       </div>
@@ -741,18 +770,29 @@
             </div>
             <label class="field">
               <span>业务赛道</span>
-              <input id="lane" value="" placeholder="例如：美妆、母婴、职场、穿搭、教育、本地生活">
+              <select id="lane" onchange="syncTopicPrompts()">
+                <option>餐饮</option>
+                <option>酒旅</option>
+              </select>
             </label>
             <label class="field">
               <span>采集关键词</span>
-              <input id="hotKeyword" value="" placeholder="例如：通勤穿搭 小个子显高 / 新手妈妈辅食 / 小红书运营涨粉">
+              <input id="hotKeyword" value="" placeholder="例如：新品种草 客单价对比 隐藏菜单 / 周末亲子房 海边民宿">
             </label>
+          </div>
+          <div class="topic-prompts">
+            <div class="topic-prompt" onclick="usePrompt('新品种草')"><strong>新品种草</strong>新品、招牌菜、限定房型、季节菜单。</div>
+            <div class="topic-prompt" onclick="usePrompt('客单价对比')"><strong>客单价对比</strong>人均预算、套餐值不值、同价位怎么选。</div>
+            <div class="topic-prompt" onclick="usePrompt('隐藏菜单')"><strong>隐藏菜单/隐藏玩法</strong>熟客才知道的点法、路线、拍照位。</div>
+            <div class="topic-prompt" onclick="usePrompt('节日节点')"><strong>节日节点</strong>周末、暑期、七夕、生日、团建、亲子。</div>
+            <div class="topic-prompt" onclick="usePrompt('到店理由')"><strong>到店理由</strong>为什么现在来、适合谁来、来了怎么点。</div>
+            <div class="topic-prompt" onclick="usePrompt('差评避坑')"><strong>差评避坑</strong>提前讲清规则、停车、排队、预约、核销。</div>
           </div>
         </div>
 
         <div class="card" style="margin-top:16px">
           <h2>员工第一次审核</h2>
-          <div class="muted">勾选适合当前账号定位、能改成原创内容的标题。未勾选标题不会进入文案生成。</div>
+          <div class="muted">勾选能带来到店动作的标题：收藏、咨询、团购点击、预约、核销。未勾选标题不会进入文案生成。</div>
           <div style="height:12px"></div>
           <div class="actions">
             <button class="btn secondary" onclick="approveTitles()">确认勾选，进入生产池</button>
@@ -793,18 +833,18 @@
             <label class="field">
               <span>生成类型</span>
               <select id="outputType">
-                <option value="标准文案+图文方案">标准文案+图文方案</option>
+                <option value="标准文案+图片工厂方案">标准文案+图片工厂方案</option>
                 <option value="标准文案">标准文案</option>
-                <option value="图文方案">图文方案</option>
+                <option value="图片工厂方案">图片工厂方案</option>
               </select>
             </label>
             <div class="card" style="background:#f8f8f8;margin-bottom:13px">
               <h3>后台固定参考方向</h3>
-              <div class="muted">系统参考小红书常见热门图文结构：封面强钩子、照片/截图位、圈点标注、对比箭头、清单总结和评论区承接。</div>
+              <div class="muted">不做 AI 生图。图片工厂只解决“商家手机烂图怎么变可发”：修曝光色温、加价签和卖点标注、套九宫格/对比图、检查图文是否匹配。</div>
             </div>
             <label class="field">
-              <span>账号素材 / 产品信息 / 用户痛点</span>
-              <textarea id="material" placeholder="填写账号定位、产品卖点、用户痛点、真实案例、禁用表达等。"></textarea>
+              <span>填空信息：店名 / 位置 / 产品 / 价格 / 到店理由</span>
+              <textarea id="material" placeholder="例：店名、商圈/景区、招牌菜或房型、价格/套餐、停车/预约/核销规则、适合人群、老板想强调的卖点。"></textarea>
             </label>
             <button class="btn" onclick="generate()">生成待审笔记</button>
           </div>
@@ -813,10 +853,10 @@
             <h2>生成结果</h2>
             <div class="output-tabs">
               <button id="tabCopy" class="active" onclick="showOutput('copy')">标准文案</button>
-              <button id="tabImages" onclick="showOutput('images')">图文方案</button>
+              <button id="tabImages" onclick="showOutput('images')">图片工厂</button>
             </div>
             <div id="copyOut" class="muted">请先在“热点标题采集”中勾选标题。</div>
-            <div id="imageOut" class="hidden muted">生成文案后显示图文方案。</div>
+            <div id="imageOut" class="hidden muted">生成文案后显示图片工厂方案。</div>
           </div>
         </div>
       </section>
@@ -859,11 +899,11 @@
           </div>
         </div>
         <div class="card" style="margin-top:16px">
-          <div id="publishXhsPreview" class="muted">生成文案和图文方案后，这里显示手机预览。</div>
+          <div id="publishXhsPreview" class="muted">生成文案和图片工厂方案后，这里显示手机预览。</div>
         </div>
         <div class="card" style="margin-top:16px">
           <h2>审核结果</h2>
-          <p class="ok">通过：员工复制文案和图文方案，手动发布到小红书。</p>
+          <p class="ok">通过：员工复制文案和图片工厂方案，手动发布到小红书。</p>
           <p class="risk">不通过：退回重写，不得发布。</p>
           <p class="muted">系统不提供自动发布功能。</p>
           <button class="btn" onclick="openMaterialPack()">打开发布素材包</button>
@@ -873,13 +913,13 @@
           <div class="muted">这里是员工手动发布前使用的素材，不会自动发布到小红书。</div>
           <div class="material-pack-grid">
             <button class="btn secondary" onclick="copyPublishText()">复制发布文案</button>
-            <button class="btn ghost" onclick="downloadImageJpgs()">下载图文素材 JPG</button>
+            <button class="btn ghost" onclick="downloadImagePlan()">下载图片工厂方案</button>
           </div>
           <div style="height:14px"></div>
           <h3>文案预览</h3>
           <pre id="materialCopyText">生成并审核后显示。</pre>
           <div style="height:14px"></div>
-          <h3>图文方案预览</h3>
+          <h3>图片工厂方案预览</h3>
           <pre id="materialImagePlan">生成并审核后显示。</pre>
         </div>
       </section>
@@ -904,6 +944,21 @@
         throw new Error(data.detail || data.error || `接口请求失败：${response.status}`);
       }
       return data;
+    }
+
+    function usePrompt(text) {
+      const input = document.getElementById("hotKeyword");
+      input.value = input.value ? `${input.value} ${text}` : text;
+    }
+
+    function syncTopicPrompts() {
+      const lane = document.getElementById("lane").value;
+      const input = document.getElementById("hotKeyword");
+      if (!input.value.trim()) {
+        input.placeholder = lane === "酒旅"
+          ? "例如：周末亲子房 海边民宿 节日套餐 隐藏拍照位"
+          : "例如：新品种草 客单价对比 隐藏菜单 周末聚餐";
+      }
     }
 
     function show(id, btn) {
@@ -1021,7 +1076,7 @@
         renderCopy(result);
         renderImages(result.images);
         document.getElementById("scanText").value = result.body || "";
-        showOutput(outputType === "图文方案" ? "images" : "copy");
+        showOutput(outputType.includes("图片工厂") ? "images" : "copy");
       } catch (error) {
         document.getElementById("copyOut").innerHTML = escapeHtml(error.message || "生成失败");
         alert(error.message || "文案生成失败");
@@ -1048,51 +1103,52 @@
 
     function fixedBenchmark() {
       return {
-        accounts: ["教培类对标账号方向", "安先生工作室类内容结构"],
+        accounts: ["本地生活种草号", "餐饮/酒旅转化型笔记结构"],
         notes: "后台固定，不开放给员工填写。",
-        usage: "参考标题钩子、信息密度、图文分屏节奏、课程转化承接；不照搬原文和图片。"
+        usage: "参考到店理由、价格锚点、场景九宫格、评论区承接；不照搬原文和图片。"
       };
     }
 
     function buildImagePlan(title) {
-      const layoutNote = "参考小红书热门图文：真实照片/截图位、大字标题、圈点标注、对比箭头、步骤清单和总结卡。";
-      const benchmarkNote = "只参考结构和信息层级，不复制原文和图片。";
+      const layoutNote = "图片工厂方向：不做 AI 生图，只把商家手机照片修到可发布。";
+      const benchmarkNote = "用真实店内随手拍、价签、标注、对比图、九宫格和图文匹配检测。";
       return [
         {
           page: "封面",
           text: title,
-          visual: `${layoutNote} ${benchmarkNote} 封面用真实场景图或截图做底，标题压上半区，右侧加 2 个圈点标注。`,
-          note: "用于提高点击，文字控制在 18-24 字。"
+          visual: `${layoutNote} ${benchmarkNote} 从老板相册选 1 张最真实的门头/菜品/房间图，先调亮、校正色温，再压 12-18 字强钩子。`,
+          note: "目标不是漂亮，是一眼真实、一眼知道为什么来。"
         },
         {
           page: "第 2 页",
-          text: "先看这 3 个信号",
-          visual: "三宫格清单，每格配一个截图局部、图标或手写圈注。",
-          note: "让用户快速判断自己是否中招。"
+          text: "价格和卖点直接标出来",
+          visual: "原图上加价签、套餐包含、适合几人、使用时间，不要遮住产品主体。",
+          note: "解决用户值不值得来的判断。"
         },
         {
           page: "第 3 页",
-          text: "常见错误 vs 正确做法",
-          visual: "左右对比排版，中间用箭头连接，错误项浅红，正确项浅绿。",
-          note: "制造收藏价值。"
+          text: "九宫格场景图",
+          visual: "用 6-9 张真实图：环境、招牌、细节、菜单/团购页、停车或路线、顾客视角。",
+          note: "让用户像提前到店踩点。"
         },
         {
           page: "第 4 页",
-          text: "照着改的步骤",
-          visual: "步骤时间线排版，配重点贴纸和小图标。",
-          note: "让内容更可执行。"
+          text: "对比图增强种草感",
+          visual: "前后对比、套餐 A/B 对比、平日/周末对比，配箭头和圈点标注。",
+          note: "把选择理由讲清楚。"
         },
         {
           page: "第 5 页",
-          text: "评论区拿模板",
-          visual: "总结卡 + 评论区承接，不做站外导流。",
-          note: "只做平台内互动承接。"
+          text: "图文匹配检测",
+          visual: "检查图片是否能证明文案：菜名、价格、位置、到店理由、预约规则是否对应。",
+          note: "不匹配就换图或改文案，避免用户不信。"
         }
       ];
     }
 
     function renderImages(images) {
       document.getElementById("imageOut").innerHTML = `
+        <div class="factory-note">图片工厂不做 AI 生图。请上传或使用老板手机实拍图，再按下面方案做修图、加字、套版和图文匹配。</div>
         ${latestOutput?.benchmark?.accounts?.length ? `
           <div class="card" style="margin-bottom:12px">
             <h3>对标参考</h3>
@@ -1100,7 +1156,7 @@
               ${latestOutput.benchmark.accounts.map(account => `
                 <div class="benchmark-item">
                   <strong>${escapeHtml(account)}</strong><br>
-                  参考方向：标题钩子、图文节奏、信息密度、转化承接。<br>
+                  参考方向：真实图片、价格锚点、九宫格场景、到店转化。<br>
                   使用边界：只参考结构，不复制文案和图片。
                 </div>
               `).join("")}
@@ -1128,7 +1184,7 @@
         return;
       }
       if (!latestOutput) {
-        document.getElementById("publishXhsPreview").innerHTML = "请先生成文案和图文方案。";
+        document.getElementById("publishXhsPreview").innerHTML = "请先生成文案和图片工厂方案。";
         return;
       }
       xhsSlideIndex = 0;
@@ -1190,7 +1246,7 @@
 
     function openMaterialPack() {
       if (!latestOutput) {
-        alert("请先生成文案和图文方案");
+        alert("请先生成文案和图片工厂方案");
         return;
       }
       if (!document.getElementById("identityCheck").checked) {
@@ -1224,12 +1280,12 @@
     }
 
     function downloadImagePlan() {
-      if (!latestOutput) return alert("暂无图文方案");
-      downloadTextFile("特别想-Lab图文方案.json", JSON.stringify(latestOutput.images, null, 2));
+      if (!latestOutput) return alert("暂无图片工厂方案");
+      downloadTextFile("特别想-Lab图片工厂方案.json", JSON.stringify(latestOutput.images, null, 2));
     }
 
     async function downloadImageJpgs() {
-      if (!latestOutput) return alert("暂无图文方案");
+      if (!latestOutput) return alert("暂无图片工厂方案");
       for (let index = 0; index < latestOutput.images.length; index++) {
         const blob = await renderImageCardToJpg(latestOutput.images[index], index);
         const url = URL.createObjectURL(blob);

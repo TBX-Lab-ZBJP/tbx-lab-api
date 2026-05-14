@@ -41,7 +41,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 class HotTitleRequest(BaseModel):
     platform: str = "小红书"
-    lane: str = ""
+    lane: str = "餐饮"
     keyword: str = ""
 
 
@@ -108,31 +108,31 @@ def env_check() -> dict[str, Any]:
 @app.post("/api/v1/xhs/hot-titles")
 async def hot_titles(payload: HotTitleRequest) -> dict[str, Any]:
     seeds = [
-        "为什么你的视频有播放却没人到店",
-        "本地团购套餐这样设计更容易核销",
-        "直播间没人停留，先改这几个动作",
-        "为什么别人收藏高，你的内容却没人互动",
-        "新账号冷启动先别急着追热点",
-        "爆款笔记标题里常见的 3 个结构",
-        "小红书内容容易没流量的几个细节",
-        "封面和正文不匹配，用户会直接划走",
-        "账号定位不清晰，越更越乱",
-        "同样的选题，为什么别人更容易出数据",
+        "本周建议发新品种草，先把到店理由讲清楚",
+        "客单价对比这样写，更容易让顾客觉得值",
+        "隐藏菜单不要只说好吃，要说适合谁点",
+        "周末到店前，顾客最关心这几个问题",
+        "节日套餐别只发价格，要发使用场景",
+        "团购券核销少，可能是笔记没讲清规则",
+        "一张烂图这样加标注，也能变成种草图",
+        "同样的菜品图，为什么别人更容易被收藏",
+        "店内随手拍怎么排成九宫格更像真人推荐",
+        "差评高发问题提前讲清，反而更容易成交",
     ]
-    directions = ["干货避坑", "案例拆解", "清单教程", "经验复盘", "选题灵感"]
+    directions = ["新品种草", "客单价对比", "隐藏菜单", "节日节点", "到店理由", "差评避坑"]
     platforms = [payload.platform or "小红书", "抖音"]
-    lane = payload.lane.strip() or "小红书内容运营"
-    keyword = payload.keyword.strip() or lane
+    lane = payload.lane.strip() if payload.lane.strip() in {"餐饮", "酒旅"} else "餐饮"
+    keyword = payload.keyword.strip() or ("新品种草 客单价对比 隐藏菜单" if lane == "餐饮" else "周末亲子房 海边民宿 节日套餐")
     items = []
     for index in range(30):
-        prefix = lane if index % 2 == 0 else keyword
-        title = f"{prefix}{[3, 5, 7, 9][index % 4]}个{seeds[index % len(seeds)]}"
+        dimension = ["地域", "品类", "季节", "节日", "平台趋势"][index % 5]
+        title = f"{lane}{keyword.split()[0] if keyword.split() else ''}：{seeds[index % len(seeds)]}"
         items.append({
             "id": f"hot_{index + 1}",
             "title": title,
             "platform": platforms[index % len(platforms)],
             "heat": 72 + ((index * 7) % 27),
-            "direction": directions[index % len(directions)],
+            "direction": f"{directions[index % len(directions)]} · {dimension}",
             "keyword": keyword,
         })
     return {"count": len(items), "items": items}
@@ -172,8 +172,9 @@ async def generate_with_hunyuan(user_input: dict[str, Any]) -> dict[str, Any]:
     base_url = os.getenv("HUNYUAN_BASE_URL", HUNYUAN_BASE_URL).rstrip("/")
     model = os.getenv("HUNYUAN_MODEL", HUNYUAN_MODEL)
     system_prompt = """
-你是“特别想-Lab”的小红书内容智能发布平台，服务对象是所有小红书内容运营作者。
-你要根据用户填写的业务赛道、关键词、账号素材和用户痛点，生成可审核、可手动发布的小红书图文笔记。
+你是“特别想-Lab”的本地生活小红书带客工具，第一批目标用户是餐饮和酒旅老板。
+老板真正付费的不是内容工具，而是带客结果：收藏、咨询、团购点击、预约、核销、到店。
+你要根据行业、转化型选题、店铺信息、菜品/房型/价格/位置/规则，生成可审核、可手动发布的小红书图文笔记。
 
 必须输出严格 JSON，不要 Markdown，不要代码块。字段：
 title: 字符串
@@ -187,8 +188,13 @@ images: 数组，每项包含 page、text、visual、note
 不承诺 GMV、ROI、爆单、第一、唯一、全网最低。
 不诱导扫码、加微信或站外私聊。
 不编造具体店名、地址、价格、成交数据。
-语气要像懂小红书增长和内容运营的策划顾问，清楚、克制、可执行。
-图文方案要参考小红书热门图文排版：真实照片/截图位、大字标题、圈点标注、步骤清单、对比箭头、重点贴纸、评论区承接。不要风格单一，不要全蓝色模板。
+语气要像懂本地生活转化的运营顾问，清楚、克制、可执行。
+文案必须是填空式可控结构，不要像全自动生成；尽量体现地点、品类、情绪、钩子、价格锚点、到店理由。
+图片方案不要做 AI 生图，不要写“生成精美图片”。核心是把老板手机里的烂图变成可发布图：
+1. 智能修图：曝光、色温、食物饱和度、房间通透感；
+2. 小红书爆款套版：菜品/房间图加价签、特色标注、九宫格场景图；
+3. 图文匹配检测：判断图片能不能证明文案里的卖点、价格、位置和规则。
+最后给出弱数据监控建议：阅读、收藏、私信/评论、团购点击、预估到店或核销。
 """.strip()
     request_body = {
         "model": model,
@@ -231,48 +237,48 @@ def scan_text(text: str) -> dict[str, Any]:
 
 def normalize_tags(tags: Any) -> list[str]:
     if not isinstance(tags, list):
-        return ["小红书运营", "内容运营", "账号定位", "爆款笔记", "图文笔记"]
+        return ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "团购套餐"]
     clean = [str(tag).strip().lstrip("#") for tag in tags if str(tag).strip()]
-    return clean[:12] or ["小红书运营", "内容运营", "账号定位", "爆款笔记", "图文笔记"]
+    return clean[:12] or ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "团购套餐"]
 
 
 def fixed_benchmark() -> dict[str, Any]:
     return {
-        "accounts": ["教培类对标账号方向", "安先生工作室类内容结构"],
+        "accounts": ["餐饮种草号", "酒旅攻略号", "本地生活团购转化型笔记"],
         "notes": "后台固定，不开放给员工填写。",
-        "usage": "参考标题钩子、信息密度、图文分屏节奏、课程转化承接；不照搬原文和图片。",
+        "usage": "参考到店理由、价格锚点、真实场景图、九宫格、评论区承接；不照搬原文和图片。",
     }
 
 
 def image_plan(title: str) -> list[dict[str, str]]:
     return [
-        {"page": "封面", "text": title, "visual": "真实照片或场景截图做底，大字标题压在上半区，右侧加 2 个圈点标注。", "note": "强钩子，控制在 18-24 字。"},
-        {"page": "第 2 页", "text": "先看这 3 个信号", "visual": "三宫格清单，每格配一个小图标或截图局部。", "note": "让用户快速判断自己是否中招。"},
-        {"page": "第 3 页", "text": "常见错误 vs 正确做法", "visual": "左右对比排版，中间用箭头连接，错误项用浅红，正确项用浅绿。", "note": "制造收藏价值。"},
-        {"page": "第 4 页", "text": "照着改的步骤", "visual": "步骤时间线排版，配手写圈注和重点贴纸。", "note": "让内容更可执行。"},
-        {"page": "第 5 页", "text": "评论区拿模板", "visual": "总结卡 + 评论区承接，不做站外导流。", "note": "只做平台内互动承接。"},
+        {"page": "封面修图", "text": title, "visual": "从老板相册选 1 张最真实的菜品/房间/门头图，调亮曝光、校正色温、压 12-18 字到店钩子。", "note": "目标不是漂亮，是一眼真实、一眼知道为什么来。"},
+        {"page": "价签标注", "text": "价格和卖点直接标出来", "visual": "在原图上加价签、套餐包含、适合几人、使用时间，不遮住主体。", "note": "解决用户值不值得来的判断。"},
+        {"page": "九宫格场景", "text": "让顾客像提前到店", "visual": "用 6-9 张真实图：环境、招牌、细节、菜单/团购页、停车或路线、顾客视角。", "note": "小红书更吃真实场景，不吃假精致。"},
+        {"page": "对比图", "text": "同价位怎么选", "visual": "套餐 A/B、平日/周末、单点/套餐做对比，加箭头和圈点标注。", "note": "把选择理由讲清楚。"},
+        {"page": "图文匹配", "text": "图片要证明文案", "visual": "检查图片是否能证明菜名/房型、价格、位置、预约规则和到店理由。", "note": "不匹配就换图或改文案，避免用户不信。"},
     ]
 
 
 def fallback_draft(payload: DraftRequest) -> dict[str, Any]:
     body = (
-        "很多账号做小红书内容，第一步就走反了。\n\n"
-        "不是先追热点，也不是先套爆款模板，更不是看到别人火了就照着抄一条。\n\n"
+        "很多本地生活老板发小红书，第一步就走反了。\n\n"
+        "不是先追热点，也不是先把图修得很高级，更不是让 AI 生成一张看起来很假的海报。\n\n"
         "真正要先看的，是这 3 件事：\n\n"
-        "1. 账号定位是否清楚\n"
-        "用户一眼看不懂你是谁、解决什么问题，就很难关注。\n\n"
-        "2. 选题有没有具体场景\n"
-        "泛泛而谈很难被收藏，越具体越容易被记住。\n\n"
-        "3. 图文有没有信息层级\n"
-        "封面、截图、圈点、步骤、总结要配合，而不是一屏堆满文字。\n\n"
+        "1. 有没有明确到店理由\n"
+        "顾客看到这条笔记，要马上知道为什么今天要来、适合谁来。\n\n"
+        "2. 有没有讲清价格和规则\n"
+        "套餐包含什么、几个人用、什么时候能用、怎么预约，这些比空泛夸好吃更重要。\n\n"
+        "3. 图片够不够真实\n"
+        "店内随手拍、菜品细节、房间实拍、菜单/团购页截图，比高大上的假图更像小红书。\n\n"
         f"{payload.material}\n\n"
-        "所以别急着日更。先把定位、选题、图文结构这三件事理顺。\n\n"
-        "评论扣「模板」，领取一次内容结构参考。"
+        "所以别急着发很多条。先把选题、真实图片和到店理由这三件事理顺。\n\n"
+        "想看具体套餐/位置/预约方式，可以在评论区问。"
     )
     return {
         "title": payload.title,
         "body": body,
-        "tags": ["小红书运营", "内容运营", "账号定位", "爆款笔记", "图文笔记"],
-        "firstComment": "想要结构参考的朋友，评论扣「模板」。",
+        "tags": ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "团购套餐"],
+        "firstComment": "想看具体套餐、位置或预约方式，可以评论区问。",
         "images": image_plan(payload.title),
     }
