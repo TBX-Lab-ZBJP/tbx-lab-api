@@ -1,0 +1,1291 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>特别想-Lab小红书笔记助手</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #ffffff;
+      color: #111111;
+    }
+    button, input, textarea, select { font: inherit; }
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 236px minmax(0, 1fr);
+    }
+    aside {
+      background: #ffffff;
+      color: #111111;
+      border-right: 1px solid #e6e6e6;
+      padding: 30px 22px;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+    .brand {
+      font-size: 23px;
+      font-weight: 900;
+      line-height: 1.25;
+      margin-bottom: 8px;
+    }
+    .brand-sub {
+      color: #555555;
+      font-size: 13px;
+      line-height: 1.7;
+      margin-bottom: 30px;
+    }
+    .nav {
+      display: grid;
+      gap: 8px;
+    }
+    .nav button {
+      width: 100%;
+      border: 0;
+      border-radius: 8px;
+      padding: 12px 14px;
+      background: transparent;
+      color: #111111;
+      text-align: left;
+      cursor: pointer;
+    }
+    .nav button.active {
+      background: #3157ff;
+      color: #fff;
+      font-weight: 800;
+    }
+    .side-note {
+      margin-top: 28px;
+      border-top: 1px solid #e6e6e6;
+      padding-top: 18px;
+      color: #555555;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    main {
+      padding: 34px 44px 48px;
+      min-width: 0;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      margin-bottom: 22px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 34px;
+      font-weight: 950;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin: 0 0 14px;
+      font-size: 19px;
+    }
+    h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+    }
+    .muted {
+      color: #667085;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      background: #8f8f8f;
+      color: #111111;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+    .grid-2 {
+      grid-template-columns: minmax(360px, 430px) minmax(0, 1fr);
+      align-items: start;
+    }
+    .grid-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .collect-form {
+      display: grid;
+      grid-template-columns: 260px 260px minmax(560px, 1fr);
+      column-gap: 16px;
+      row-gap: 18px;
+      align-items: start;
+    }
+    .collect-platform-stack {
+      display: contents;
+    }
+    .collect-platform-stack .field {
+      grid-column: 1;
+      grid-row: 1;
+      width: 260px;
+    }
+    .collect-button-row {
+      display: flex;
+      gap: 12px;
+      grid-column: 1 / -1;
+      grid-row: 2;
+      width: auto;
+      margin-top: 2px;
+    }
+    .collect-form > .field:nth-of-type(1) {
+      grid-column: 2;
+      grid-row: 1;
+      width: 260px;
+    }
+    .collect-form > .field:nth-of-type(2) {
+      grid-column: 3;
+      grid-row: 1;
+      width: 100%;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid #e6e6e6;
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: none;
+    }
+    .field {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .field span {
+      font-size: 13px;
+      color: #475467;
+      font-weight: 700;
+      display: block;
+      min-height: 18px;
+      line-height: 18px;
+    }
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid #cfd5df;
+      border-radius: 8px;
+      padding: 10px 11px;
+      background: #fff;
+      color: #17212b;
+      min-height: 44px;
+    }
+    textarea {
+      min-height: 118px;
+      resize: vertical;
+    }
+    .btn {
+      border: 0;
+      border-radius: 8px;
+      background: #3157ff;
+      color: #fff;
+      padding: 11px 15px;
+      font-weight: 800;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn.secondary {
+      background: #111111;
+    }
+    .btn.ghost {
+      color: #111111;
+      background: #d4d4d4;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid #ece8df;
+      border-radius: 8px;
+      max-height: 520px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      min-width: 760px;
+    }
+    th, td {
+      border-bottom: 1px solid #ece8df;
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th {
+      background: #faf8f4;
+      color: #475467;
+      font-size: 12px;
+      font-weight: 900;
+    }
+    tr:hover td {
+      background: #fffaf6;
+    }
+    #hotRows td {
+      padding-top: 14px;
+      padding-bottom: 14px;
+      vertical-align: middle;
+    }
+    #hotRows .hotCheck {
+      width: 22px;
+      height: 22px;
+      accent-color: #3157ff;
+      cursor: pointer;
+    }
+    #hotRows .hot-index,
+    #hotRows .hot-title {
+      font-size: 18px;
+      line-height: 1.55;
+      color: #17212b;
+    }
+    #hotRows .hot-index {
+      font-weight: 800;
+      text-align: center;
+    }
+    #hotRows .hot-title {
+      font-weight: 700;
+    }
+    .score {
+      font-weight: 900;
+      color: #3157ff;
+    }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #f8fafc;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 13px;
+      line-height: 1.65;
+      margin: 0;
+    }
+    .output-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .output-tabs button {
+      border: 0;
+      border-radius: 8px;
+      padding: 9px 12px;
+      background: #d4d4d4;
+      color: #111111;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .output-tabs button.active {
+      background: #3157ff;
+      color: #ffffff;
+    }
+    .copy-title {
+      display: inline-block;
+      background: #3157ff;
+      color: #ffffff;
+      padding: 6px 10px;
+      font-size: 20px;
+      font-weight: 950;
+      line-height: 1.35;
+      margin-bottom: 10px;
+    }
+    .copy-body {
+      white-space: pre-wrap;
+      line-height: 1.8;
+      font-size: 15px;
+    }
+    .tag {
+      display: inline-flex;
+      background: #f1f1f1;
+      border: 1px solid #d4d4d4;
+      border-radius: 999px;
+      padding: 5px 9px;
+      margin: 5px 6px 0 0;
+      font-size: 13px;
+    }
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .image-card {
+      border: 1px solid #e6e6e6;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #ffffff;
+    }
+    .image-preview {
+      min-height: 138px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      background: #3157ff;
+      color: #ffffff;
+      padding: 18px;
+      font-size: 20px;
+      font-weight: 950;
+      line-height: 1.3;
+    }
+    .image-card:nth-child(2n) .image-preview {
+      background: #8f8f8f;
+      color: #111111;
+    }
+    .image-meta {
+      padding: 12px;
+      line-height: 1.65;
+      font-size: 13px;
+    }
+    .benchmark-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .benchmark-item {
+      border: 1px solid #e6e6e6;
+      border-radius: 8px;
+      padding: 12px;
+      background: #fafafa;
+      line-height: 1.6;
+    }
+    .xhs-phone {
+      width: min(430px, 100%);
+      margin: 0 auto;
+      background: #ffffff;
+      border: 1px solid #e6e6e6;
+      border-radius: 28px;
+      overflow: hidden;
+      box-shadow: 0 18px 40px rgba(17,17,17,.12);
+    }
+    .xhs-status {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 18px 24px 10px;
+      font-size: 18px;
+      font-weight: 900;
+    }
+    .xhs-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 20px;
+    }
+    .xhs-back {
+      font-size: 30px;
+      line-height: 1;
+    }
+    .xhs-avatar {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: #111111;
+      color: #ffffff;
+      display: grid;
+      place-items: center;
+      font-weight: 950;
+      font-size: 13px;
+    }
+    .xhs-name {
+      flex: 1;
+      font-size: 18px;
+      font-weight: 900;
+    }
+    .xhs-more {
+      font-size: 26px;
+      font-weight: 900;
+    }
+    .xhs-carousel {
+      position: relative;
+      overflow: hidden;
+      background: #ffffff;
+      touch-action: pan-y;
+    }
+    .xhs-track {
+      display: flex;
+      transition: transform .24s ease;
+      will-change: transform;
+    }
+    .xhs-slide {
+      flex: 0 0 100%;
+      min-height: 520px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .xhs-card-art {
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      border-radius: 22px;
+      background: #3157ff;
+      color: #ffffff;
+      display: grid;
+      align-content: center;
+      gap: 18px;
+      padding: 34px;
+      position: relative;
+      overflow: hidden;
+    }
+    .xhs-slide:nth-child(even) .xhs-card-art {
+      background: #f2f2f2;
+      color: #111111;
+      border: 1px solid #d4d4d4;
+    }
+    .xhs-card-kicker {
+      display: inline-block;
+      width: fit-content;
+      background: rgba(255,255,255,.22);
+      border-radius: 999px;
+      padding: 7px 13px;
+      font-weight: 900;
+      font-size: 13px;
+    }
+    .xhs-slide:nth-child(even) .xhs-card-kicker {
+      background: #3157ff;
+      color: #ffffff;
+    }
+    .xhs-card-title {
+      font-size: 34px;
+      font-weight: 950;
+      line-height: 1.16;
+      letter-spacing: 0;
+    }
+    .xhs-card-note {
+      font-size: 15px;
+      line-height: 1.65;
+      opacity: .9;
+    }
+    .xhs-card-brand {
+      position: absolute;
+      right: 22px;
+      bottom: 18px;
+      font-weight: 950;
+      font-size: 13px;
+    }
+    .xhs-dots {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 0 4px;
+    }
+    .xhs-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #d5d5d5;
+    }
+    .xhs-dot.active {
+      background: #ff2f5f;
+    }
+    .xhs-content {
+      padding: 12px 22px 18px;
+    }
+    .xhs-title {
+      font-size: 19px;
+      font-weight: 950;
+      line-height: 1.45;
+      margin-bottom: 10px;
+    }
+    .xhs-body {
+      font-size: 16px;
+      line-height: 1.85;
+      white-space: pre-wrap;
+      max-height: 210px;
+      overflow: hidden;
+    }
+    .xhs-tags {
+      color: #3157ff;
+      line-height: 1.8;
+      margin-top: 8px;
+      font-size: 15px;
+    }
+    .xhs-bottom {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto auto;
+      gap: 16px;
+      align-items: center;
+      border-top: 1px solid #eeeeee;
+      padding: 12px 18px 18px;
+      background: #ffffff;
+      position: sticky;
+      bottom: 0;
+    }
+    .xhs-comment-input {
+      background: #f2f2f2;
+      border-radius: 999px;
+      padding: 10px 14px;
+      color: #8a8a8a;
+      font-size: 14px;
+    }
+    .xhs-action {
+      font-size: 15px;
+      white-space: nowrap;
+    }
+    .material-pack {
+      border: 2px solid #3157ff;
+      border-radius: 8px;
+      padding: 18px;
+      background: #ffffff;
+    }
+    .material-pack-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .jpg-export-stage {
+      position: fixed;
+      left: -99999px;
+      top: 0;
+      width: 900px;
+      height: 1200px;
+      background: #ffffff;
+    }
+    @media (max-width: 980px) {
+      .material-pack-grid { grid-template-columns: 1fr; }
+    }
+    .hidden { display: none; }
+    .review-list label {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin: 14px 0;
+      line-height: 1.6;
+      border: 1px solid #e6e6e6;
+      border-radius: 8px;
+      padding: 14px;
+      background: #f8f8f8;
+      font-weight: 800;
+    }
+    .review-list input {
+      width: 18px;
+      height: 18px;
+      margin-top: 3px;
+      accent-color: #3157ff;
+      flex: 0 0 auto;
+    }
+    .btn:disabled {
+      background: #d4d4d4;
+      color: #777777;
+      cursor: not-allowed;
+    }
+    .risk { color: #b42318; font-weight: 900; }
+    .ok { color: #027a48; font-weight: 900; }
+    @media (max-width: 980px) {
+      .app { grid-template-columns: 1fr; }
+      aside { position: static; height: auto; }
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      .collect-form { grid-template-columns: 1fr; }
+      .collect-platform-stack .field,
+      .collect-form > .field:nth-of-type(1),
+      .collect-form > .field:nth-of-type(2),
+      .collect-button-row {
+        grid-column: 1;
+        grid-row: auto;
+        width: 100%;
+      }
+      .collect-button-row { flex-wrap: wrap; }
+      .topbar { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="brand">特别想-Lab<br>小红书笔记助手</div>
+      <div class="brand-sub">电脑端工作台 · 内部员工使用<br>热点采集 / 标题审核 / 文案生成 / 红线扫描</div>
+      <div class="nav">
+        <button class="active" onclick="show('collect', this)">01 热点采集</button>
+        <button onclick="show('write', this)">02 文案生成</button>
+        <button onclick="show('scan', this)">03 红线扫描</button>
+        <button onclick="show('review', this)">04 员工审核</button>
+      </div>
+      <div class="side-note">
+        内部专属工具<br>AI 只负责生产辅助。所有标题、文案、数据和案例都必须经过员工审核后，才能手动发布。
+      </div>
+    </aside>
+
+    <main>
+      <div class="topbar">
+        <div>
+          <h1>特别想-Lab小红书笔记助手</h1>
+          <div class="muted">先从小红书/抖音采集 30 个热点标题，员工勾选后，再生成威海本地化笔记。</div>
+        </div>
+        <span class="badge">特别想-Lab · 内部专属</span>
+      </div>
+
+      <section id="collect">
+        <div class="card">
+          <h2>采集设置</h2>
+          <div class="collect-form">
+            <div class="collect-platform-stack">
+              <label class="field">
+                <span>采集平台</span>
+                <select id="platform">
+                  <option>只采集小红书</option>
+                  <option>只采集抖音</option>
+                  <option>小红书 + 抖音</option>
+                </select>
+              </label>
+              <div class="collect-button-row">
+                <button class="btn" onclick="collectHotTitles()">一次性采集30个标题</button>
+                <button class="btn ghost" onclick="clearSelection()">清空勾选</button>
+              </div>
+            </div>
+            <label class="field">
+              <span>业务赛道</span>
+              <select id="lane">
+                <option>餐饮</option>
+                <option>酒旅</option>
+                <option>综合</option>
+                <option>本地生活全板块</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>采集关键词</span>
+              <input id="hotKeyword" value="威海餐饮 抖音团购 直播没流量">
+            </label>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <h2>员工第一次审核</h2>
+          <div class="muted">勾选适合特别想-Lab内部内容标准、能改成威海本地内容的标题。未勾选标题不会进入文案生成。</div>
+          <div style="height:12px"></div>
+          <div class="actions">
+            <button class="btn secondary" onclick="approveTitles()">确认勾选，进入生产池</button>
+            <span class="badge" id="approvedCount">已选 0 个</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <h2>候选热点标题</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:52px">选择</th>
+                  <th style="width:56px">序号</th>
+                  <th>热点标题</th>
+                  <th style="width:90px">平台</th>
+                  <th style="width:80px">热度</th>
+                  <th style="width:130px">建议方向</th>
+                </tr>
+              </thead>
+              <tbody id="hotRows">
+                <tr><td colspan="6" class="muted">点击“采集 30 个标题”后显示。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="write" class="hidden">
+        <div class="grid grid-2">
+          <div class="card">
+            <h2>按已审核标题生成文案</h2>
+            <label class="field">
+              <span>生产池标题</span>
+              <select id="titleSelect"></select>
+            </label>
+            <label class="field">
+              <span>生成类型</span>
+              <select id="outputType">
+                <option value="标准文案+图文方案">标准文案+图文方案</option>
+                <option value="标准文案">标准文案</option>
+                <option value="图文方案">图文方案</option>
+              </select>
+            </label>
+            <div class="card" style="background:#f8f8f8;margin-bottom:13px">
+              <h3>后台固定参考方向</h3>
+              <div class="muted">员工不用找对标、不用上传参考图。系统统一按“教培对标账号的信息密度 + 小红书图文节奏 + 特别想-Lab 蓝/灰/黑/白 VI”生成。</div>
+            </div>
+            <label class="field">
+              <span>真实威海素材</span>
+              <textarea id="material">员工已核实：暂不填具体店名，只使用环翠区、经区、高区等威海地域信息。</textarea>
+            </label>
+            <button class="btn" onclick="generate()">生成待审笔记</button>
+          </div>
+
+          <div class="card">
+            <h2>生成结果</h2>
+            <div class="output-tabs">
+              <button id="tabCopy" class="active" onclick="showOutput('copy')">标准文案</button>
+              <button id="tabImages" onclick="showOutput('images')">图文方案</button>
+            </div>
+            <div id="copyOut" class="muted">请先在“热点标题采集”中勾选标题。</div>
+            <div id="imageOut" class="hidden muted">生成文案后显示图文方案。</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="scan" class="hidden">
+        <div class="grid grid-2">
+          <div class="card">
+            <h2>红线扫描</h2>
+            <div class="muted">发布前必须检查身份红线、价格红线、承诺红线和导流风险。</div>
+            <label class="field">
+              <span>待扫描文案</span>
+              <textarea id="scanText">我们是官方服务商，保证GMV，全网最低，扫码加我微信。</textarea>
+            </label>
+            <button class="btn secondary" onclick="scan()">开始扫描</button>
+          </div>
+          <div class="card">
+            <h2>扫描结果</h2>
+            <pre id="scanOut">等待扫描。</pre>
+          </div>
+        </div>
+      </section>
+
+      <section id="review" class="hidden">
+        <div class="grid grid-2">
+          <div class="card">
+            <h2>员工二次审核</h2>
+            <div class="muted">员工只需要复核身份红线这一项。其他风险由系统扫描和后台规则处理。</div>
+            <div class="review-list">
+              <label>
+                <input id="identityCheck" type="checkbox" onchange="togglePreviewButton()">
+                <span>已确认：文案与图文中未出现字节、官方服务商、公司全称</span>
+              </label>
+            </div>
+            <button id="previewButton" class="btn secondary" onclick="renderPublishPreview()" disabled>确认内容审核无误，刷新发布预览</button>
+            <div id="reviewHint" class="muted" style="margin-top:10px">请先勾选身份红线审核项。</div>
+          </div>
+          <div class="card">
+            <h2>小红书发布预览</h2>
+            <div class="muted">预览会模拟手机笔记详情页。图文区域支持左右滑动，也可以点下方圆点切换。</div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <div id="publishXhsPreview" class="muted">生成文案和图文方案后，这里显示手机预览。</div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <h2>审核结果</h2>
+          <p class="ok">通过：员工复制文案和图文方案，手动发布到小红书。</p>
+          <p class="risk">不通过：退回重写，不得发布。</p>
+          <p class="muted">系统不提供自动发布功能。</p>
+          <button class="btn" onclick="openMaterialPack()">打开发布素材包</button>
+        </div>
+        <div id="materialPack" class="material-pack hidden" style="margin-top:16px">
+          <h2>发布素材包</h2>
+          <div class="muted">这里是员工手动发布前使用的素材，不会自动发布到小红书。</div>
+          <div class="material-pack-grid">
+            <button class="btn secondary" onclick="copyPublishText()">复制发布文案</button>
+            <button class="btn ghost" onclick="downloadImageJpgs()">下载图文素材 JPG</button>
+          </div>
+          <div style="height:14px"></div>
+          <h3>文案预览</h3>
+          <pre id="materialCopyText">生成并审核后显示。</pre>
+          <div style="height:14px"></div>
+          <h3>图文方案预览</h3>
+          <pre id="materialImagePlan">生成并审核后显示。</pre>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const redLines = ["字节", "官方服务商", "官方营销服务商", "威海特别想文化传媒有限公司", "保证GMV", "保证ROI", "全网最低", "第一", "唯一", "扫码", "微信号", "加我微信", "¥998", "¥2,980", "2980"];
+    let hotTitles = [];
+    let approvedTitles = [];
+    let latestOutput = null;
+    let xhsSlideIndex = 0;
+
+    async function apiPost(path, payload) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload || {})
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.detail || data.error || `接口请求失败：${response.status}`);
+      }
+      return data;
+    }
+
+    function show(id, btn) {
+      document.querySelectorAll("main section").forEach(s => s.classList.add("hidden"));
+      document.getElementById(id).classList.remove("hidden");
+      document.querySelectorAll(".nav button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    }
+
+    function scanText(text) {
+      const hits = redLines.filter(w => text.includes(w));
+      return {
+        passed: hits.length === 0,
+        risk_terms: hits,
+        score: Math.max(0, 100 - hits.length * 15),
+        suggestions: hits.length ? ["删除命中红线", "改成评论扣关键词或私信体验课"] : ["可进入员工事实审核"]
+      };
+    }
+
+    async function collectHotTitles() {
+      const button = event?.currentTarget;
+      const oldText = button?.textContent;
+      if (button) {
+        button.disabled = true;
+        button.textContent = "正在采集...";
+      }
+      try {
+        const data = await apiPost("/api/v1/xhs/hot-titles", {
+          platform: document.getElementById("platform").value,
+          lane: document.getElementById("lane").value,
+          keyword: document.getElementById("hotKeyword").value
+        });
+        hotTitles = data.items || [];
+        renderHotRows();
+      } catch (error) {
+        alert(error.message || "热点标题采集失败");
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.textContent = oldText;
+        }
+      }
+    }
+
+    function renderHotRows() {
+      document.getElementById("hotRows").innerHTML = hotTitles.map((item, index) => `
+        <tr>
+          <td><input type="checkbox" class="hotCheck" value="${item.id}" onchange="updateSelectedCount()"></td>
+          <td class="hot-index">${index + 1}</td>
+          <td class="hot-title">${item.title}</td>
+          <td>${item.platform}</td>
+          <td class="score">${item.heat}</td>
+          <td>${item.direction}</td>
+        </tr>
+      `).join("");
+      updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+      const count = document.querySelectorAll(".hotCheck:checked").length;
+      document.getElementById("approvedCount").textContent = `已选 ${count} 个`;
+    }
+
+    function clearSelection() {
+      document.querySelectorAll(".hotCheck").forEach(el => el.checked = false);
+      updateSelectedCount();
+    }
+
+    function approveTitles() {
+      const checkedIds = Array.from(document.querySelectorAll(".hotCheck:checked")).map(el => el.value);
+      approvedTitles = hotTitles.filter(item => checkedIds.includes(item.id));
+      const select = document.getElementById("titleSelect");
+      select.innerHTML = approvedTitles.map(item => `<option>${item.title}</option>`).join("");
+      document.getElementById("approvedCount").textContent = `已入池 ${approvedTitles.length} 个`;
+      alert(`已选择 ${approvedTitles.length} 个标题进入生产池`);
+    }
+
+    function showOutput(type) {
+      document.getElementById("copyOut").classList.toggle("hidden", type !== "copy");
+      document.getElementById("imageOut").classList.toggle("hidden", type !== "images");
+      document.getElementById("tabCopy").classList.toggle("active", type === "copy");
+      document.getElementById("tabImages").classList.toggle("active", type === "images");
+    }
+
+    async function generate() {
+      const title = document.getElementById("titleSelect").value;
+      if (!title) {
+        alert("请先在热点标题采集页勾选标题");
+        return;
+      }
+      const outputType = document.getElementById("outputType").value;
+      const material = document.getElementById("material").value;
+      const button = event?.currentTarget;
+      const oldText = button?.textContent;
+      if (button) {
+        button.disabled = true;
+        button.textContent = "正在生成...";
+      }
+      document.getElementById("copyOut").innerHTML = "正在调用腾讯混元生成，请稍等。";
+      try {
+        const result = await apiPost("/api/v1/xhs/draft", {
+          title,
+          outputType,
+          noteShape: outputType,
+          material,
+          framework: "避坑警告"
+        });
+        result.firstComment = result.firstComment || result.first_comment || "";
+        result.benchmark = result.benchmark || fixedBenchmark();
+        result.images = result.images?.length ? result.images : buildImagePlan(result.title || title);
+        result.compliance = result.compliance || scanText(result.body || "");
+        latestOutput = result;
+        renderCopy(result);
+        renderImages(result.images);
+        document.getElementById("scanText").value = result.body || "";
+        showOutput(outputType === "图文方案" ? "images" : "copy");
+      } catch (error) {
+        document.getElementById("copyOut").innerHTML = escapeHtml(error.message || "生成失败");
+        alert(error.message || "文案生成失败");
+      } finally {
+        if (button) {
+          button.disabled = false;
+          button.textContent = oldText;
+        }
+      }
+    }
+
+    function renderCopy(result) {
+      document.getElementById("copyOut").innerHTML = `
+        <div class="copy-title">${escapeHtml(result.title)}</div>
+        <div class="copy-body">${escapeHtml(result.body)}</div>
+        <div style="height:12px"></div>
+        <h3>标签</h3>
+        <div>${result.tags.map(tag => `<span class="tag">#${escapeHtml(tag)}</span>`).join("")}</div>
+        <div style="height:14px"></div>
+        <h3>置顶评论</h3>
+        <pre>${escapeHtml(result.firstComment)}</pre>
+      `;
+    }
+
+    function fixedBenchmark() {
+      return {
+        accounts: ["教培类对标账号方向", "安先生工作室类内容结构"],
+        notes: "后台固定，不开放给员工填写。",
+        usage: "参考标题钩子、信息密度、图文分屏节奏、课程转化承接；不照搬原文和图片。"
+      };
+    }
+
+    function buildImagePlan(title) {
+      const layoutNote = "后台固定参考方向：教培类对标账号的信息密度、小红书图文分屏节奏、特别想-Lab蓝/灰/黑/白版式。";
+      const benchmarkNote = "参考标题钩子、信息密度、分屏节奏和转化承接方式，但不照搬原文和图片。";
+      return [
+        {
+          page: "封面",
+          text: title,
+          visual: `${layoutNote} ${benchmarkNote} 封面突出主标题，背景不放门店假图。`,
+          note: "用于提高点击，文字控制在 18-24 字。"
+        },
+        {
+          page: "第 2 页",
+          text: "别先投流，先看套餐",
+          visual: "灰底黑字，左侧放“错误顺序”，右侧放“正确顺序”。",
+          note: "强调认知反差。"
+        },
+        {
+          page: "第 3 页",
+          text: "威海本地内容，要有本地钩子",
+          visual: "白底，蓝色条突出环翠区/经区/高区等地域词。",
+          note: "只用真实地域，不编造店名。"
+        },
+        {
+          page: "第 4 页",
+          text: "播放量不是结果，到店才是",
+          visual: "用三段式数据框：播放、点击、核销。",
+          note: "为后续复盘工具做承接。"
+        },
+        {
+          page: "第 5 页",
+          text: "评论扣「资料」，先免费试一次",
+          visual: "蓝色 CTA 条，底部留员工审核备注位。",
+          note: "只引 L0 免费试用或 ¥99 体验课。"
+        }
+      ];
+    }
+
+    function renderImages(images) {
+      document.getElementById("imageOut").innerHTML = `
+        ${latestOutput?.benchmark?.accounts?.length ? `
+          <div class="card" style="margin-bottom:12px">
+            <h3>对标参考</h3>
+            <div class="benchmark-list">
+              ${latestOutput.benchmark.accounts.map(account => `
+                <div class="benchmark-item">
+                  <strong>${escapeHtml(account)}</strong><br>
+                  参考方向：标题钩子、图文节奏、信息密度、转化承接。<br>
+                  使用边界：只参考结构，不复制文案和图片。
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        ` : ""}
+        <div class="image-grid">
+          ${images.map(item => `
+            <div class="image-card">
+              <div class="image-preview">${escapeHtml(item.text)}</div>
+              <div class="image-meta">
+                <strong>${escapeHtml(item.page)}</strong><br>
+                画面：${escapeHtml(item.visual)}<br>
+                备注：${escapeHtml(item.note)}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function renderPublishPreview() {
+      if (!document.getElementById("identityCheck").checked) {
+        document.getElementById("reviewHint").innerHTML = "请先确认未出现字节、官方服务商、公司全称。";
+        return;
+      }
+      if (!latestOutput) {
+        document.getElementById("publishXhsPreview").innerHTML = "请先生成文案和图文方案。";
+        return;
+      }
+      xhsSlideIndex = 0;
+      const shortBody = latestOutput.body.split("\n").slice(0, 10).join("\n");
+      document.getElementById("publishXhsPreview").innerHTML = `
+        <div class="xhs-phone">
+          <div class="xhs-status">
+            <span>01:08</span>
+            <span>▮▮▮  WiFi  51</span>
+          </div>
+          <div class="xhs-head">
+            <div class="xhs-back">‹</div>
+            <div class="xhs-avatar">TBX</div>
+            <div class="xhs-name">特别想-Lab</div>
+            <div class="xhs-more">···</div>
+          </div>
+          <div class="xhs-carousel" id="xhsCarousel">
+            <div class="xhs-track" id="xhsTrack">
+              ${latestOutput.images.map((item, index) => `
+                <div class="xhs-slide">
+                  <div class="xhs-card-art">
+                    <div class="xhs-card-kicker">${escapeHtml(item.page)}</div>
+                    <div class="xhs-card-title">${escapeHtml(item.text)}</div>
+                    <div class="xhs-card-note">${escapeHtml(item.note)}</div>
+                    <div class="xhs-card-brand">特别想-Lab</div>
+                  </div>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+          <div class="xhs-dots">
+            ${latestOutput.images.map((_, index) => `<span class="xhs-dot ${index === 0 ? "active" : ""}" onclick="goXhsSlide(${index})"></span>`).join("")}
+          </div>
+          <div class="xhs-content">
+            <div class="xhs-title">${escapeHtml(latestOutput.title)}</div>
+            <div class="xhs-body">${escapeHtml(shortBody)}</div>
+            <div class="xhs-tags">${latestOutput.tags.map(tag => `#${escapeHtml(tag)}`).join(" ")}</div>
+            <div class="muted" style="margin-top:10px">置顶评论：${escapeHtml(latestOutput.firstComment)}</div>
+          </div>
+          <div class="xhs-bottom">
+            <div class="xhs-comment-input">说点什么...</div>
+            <div class="xhs-action">♡ 点赞</div>
+            <div class="xhs-action">☆ 收藏</div>
+            <div class="xhs-action">💬 评论</div>
+          </div>
+        </div>
+      `;
+      bindXhsSwipe();
+      goXhsSlide(0);
+    }
+
+    function togglePreviewButton() {
+      const checked = document.getElementById("identityCheck").checked;
+      document.getElementById("previewButton").disabled = !checked;
+      document.getElementById("reviewHint").innerHTML = checked
+        ? "已完成身份红线审核，可以刷新发布预览。"
+        : "请先勾选身份红线审核项。";
+    }
+
+    function openMaterialPack() {
+      if (!latestOutput) {
+        alert("请先生成文案和图文方案");
+        return;
+      }
+      if (!document.getElementById("identityCheck").checked) {
+        alert("请先完成员工二次审核");
+        return;
+      }
+      const copyText = buildPublishText();
+      const imagePlan = latestOutput.images.map((item, index) => ({
+        序号: index + 1,
+        页面: item.page,
+        页面文字: item.text,
+        画面建议: item.visual,
+        备注: item.note
+      }));
+      document.getElementById("materialCopyText").textContent = copyText;
+      document.getElementById("materialImagePlan").textContent = JSON.stringify(imagePlan, null, 2);
+      document.getElementById("materialPack").classList.remove("hidden");
+      document.getElementById("materialPack").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function buildPublishText() {
+      if (!latestOutput) return "";
+      return `${latestOutput.title}\n\n${latestOutput.body}\n\n${latestOutput.tags.map(tag => `#${tag}`).join(" ")}\n\n置顶评论：${latestOutput.firstComment}`;
+    }
+
+    async function copyPublishText() {
+      const text = buildPublishText();
+      if (!text) return alert("暂无可复制文案");
+      await navigator.clipboard.writeText(text);
+      alert("发布文案已复制");
+    }
+
+    function downloadImagePlan() {
+      if (!latestOutput) return alert("暂无图文方案");
+      downloadTextFile("特别想-Lab图文方案.json", JSON.stringify(latestOutput.images, null, 2));
+    }
+
+    async function downloadImageJpgs() {
+      if (!latestOutput) return alert("暂无图文方案");
+      for (let index = 0; index < latestOutput.images.length; index++) {
+        const blob = await renderImageCardToJpg(latestOutput.images[index], index);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `特别想-Lab图文素材-${index + 1}.jpg`;
+        a.click();
+        URL.revokeObjectURL(url);
+        await new Promise(resolve => setTimeout(resolve, 120));
+      }
+    }
+
+    function renderImageCardToJpg(item, index) {
+      return new Promise(resolve => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 900;
+        canvas.height = 1200;
+        const ctx = canvas.getContext("2d");
+        const blue = "#3157ff";
+        const gray = "#8f8f8f";
+        const isBlue = index % 2 === 0;
+
+        ctx.fillStyle = isBlue ? blue : "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (!isBlue) {
+          ctx.strokeStyle = "#d4d4d4";
+          ctx.lineWidth = 8;
+          ctx.strokeRect(24, 24, canvas.width - 48, canvas.height - 48);
+        }
+
+        ctx.fillStyle = isBlue ? "#ffffff" : "#111111";
+        ctx.font = "900 42px Microsoft YaHei, sans-serif";
+        ctx.fillText("特别想-Lab", 64, 92);
+
+        ctx.fillStyle = isBlue ? "rgba(255,255,255,.22)" : blue;
+        roundRect(ctx, 64, 132, 190, 54, 27);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "900 26px Microsoft YaHei, sans-serif";
+        ctx.fillText(item.page, 92, 168);
+
+        ctx.fillStyle = isBlue ? "#ffffff" : "#111111";
+        drawWrappedText(ctx, item.text, 64, 330, 760, 76, "900 66px Microsoft YaHei, sans-serif");
+
+        ctx.fillStyle = isBlue ? "rgba(255,255,255,.9)" : "#666666";
+        drawWrappedText(ctx, item.note, 64, 810, 740, 42, "400 32px Microsoft YaHei, sans-serif");
+
+        ctx.strokeStyle = isBlue ? "rgba(255,255,255,.65)" : blue;
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(64, 1080);
+        ctx.lineTo(250, 1080);
+        ctx.stroke();
+
+        ctx.fillStyle = isBlue ? "rgba(255,255,255,.9)" : gray;
+        ctx.font = "900 30px Microsoft YaHei, sans-serif";
+        ctx.fillText("本地生活内容工具", 64, 1138);
+
+        canvas.toBlob(blob => resolve(blob), "image/jpeg", 0.94);
+      });
+    }
+
+    function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight, font) {
+      ctx.font = font;
+      const chars = String(text).split("");
+      let line = "";
+      for (const char of chars) {
+        const testLine = line + char;
+        if (ctx.measureText(testLine).width > maxWidth && line) {
+          ctx.fillText(line, x, y);
+          line = char;
+          y += lineHeight;
+        } else {
+          line = testLine;
+        }
+      }
+      if (line) ctx.fillText(line, x, y);
+    }
+
+    function roundRect(ctx, x, y, width, height, radius) {
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.arcTo(x + width, y, x + width, y + height, radius);
+      ctx.arcTo(x + width, y + height, x, y + height, radius);
+      ctx.arcTo(x, y + height, x, y, radius);
+      ctx.arcTo(x, y, x + width, y, radius);
+      ctx.closePath();
+    }
+
+    function downloadTextFile(filename, text) {
+      if (!text) return alert("暂无内容");
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function goXhsSlide(index) {
+      if (!latestOutput) return;
+      xhsSlideIndex = Math.max(0, Math.min(index, latestOutput.images.length - 1));
+      const track = document.getElementById("xhsTrack");
+      if (track) track.style.transform = `translateX(${-xhsSlideIndex * 100}%)`;
+      document.querySelectorAll(".xhs-dot").forEach((dot, i) => dot.classList.toggle("active", i === xhsSlideIndex));
+    }
+
+    function bindXhsSwipe() {
+      const carousel = document.getElementById("xhsCarousel");
+      if (!carousel) return;
+      let startX = 0;
+      carousel.onpointerdown = (event) => {
+        startX = event.clientX;
+        carousel.setPointerCapture(event.pointerId);
+      };
+      carousel.onpointerup = (event) => {
+        const delta = event.clientX - startX;
+        if (Math.abs(delta) > 40) {
+          goXhsSlide(xhsSlideIndex + (delta < 0 ? 1 : -1));
+        }
+      };
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+
+    async function scan() {
+      const text = document.getElementById("scanText").value;
+      document.getElementById("scanOut").textContent = "正在扫描...";
+      try {
+        const result = await apiPost("/api/v1/xhs/scan", { text });
+        document.getElementById("scanOut").textContent = JSON.stringify(result, null, 2);
+      } catch (error) {
+        document.getElementById("scanOut").textContent = JSON.stringify(scanText(text), null, 2);
+        alert(error.message || "后端扫描失败，已显示本地扫描结果");
+      }
+    }
+  </script>
+</body>
+</html>
