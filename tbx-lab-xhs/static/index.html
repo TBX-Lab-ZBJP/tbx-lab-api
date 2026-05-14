@@ -384,6 +384,112 @@
       background: #eef6ff;
       color: #11294a;
     }
+    .image-preview.real-photo {
+      min-height: 360px;
+      aspect-ratio: 3 / 4;
+      position: relative;
+      display: block;
+      padding: 0;
+      overflow: hidden;
+      text-align: left;
+      background: #111111;
+      color: #ffffff;
+    }
+    .image-preview.real-photo::before,
+    .image-preview.real-photo::after {
+      content: none;
+    }
+    .image-preview.real-photo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      filter: brightness(1.08) contrast(1.05) saturate(1.08);
+      transform: scale(1.02);
+    }
+    .poster-shade {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(180deg, rgba(0,0,0,.08) 0%, rgba(0,0,0,.08) 45%, rgba(0,0,0,.78) 100%),
+        linear-gradient(90deg, rgba(0,0,0,.28), rgba(0,0,0,0) 46%);
+    }
+    .poster-topline,
+    .poster-page,
+    .poster-title,
+    .poster-note,
+    .poster-sticker {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      z-index: 2;
+    }
+    .poster-topline {
+      top: 16px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .poster-pill {
+      display: inline-flex;
+      width: fit-content;
+      border-radius: 999px;
+      background: rgba(255,255,255,.86);
+      color: #111111;
+      padding: 5px 9px;
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1;
+    }
+    .poster-page {
+      top: 58px;
+      right: auto;
+      width: fit-content;
+      border-radius: 999px;
+      background: #ff2442;
+      color: #ffffff;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 950;
+    }
+    .poster-title {
+      bottom: 96px;
+      font-size: 26px;
+      line-height: 1.18;
+      font-weight: 950;
+      color: #ffffff;
+      text-shadow: 0 2px 12px rgba(0,0,0,.38);
+    }
+    .poster-note {
+      bottom: 44px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      color: rgba(255,255,255,.92);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .poster-sticker {
+      right: 18px;
+      left: auto;
+      bottom: 18px;
+      width: fit-content;
+      background: #fff100;
+      color: #111111;
+      border-radius: 8px;
+      padding: 6px 9px;
+      font-size: 12px;
+      font-weight: 950;
+      transform: rotate(-2deg);
+    }
+    .image-actions {
+      padding: 0 12px 12px;
+    }
+    .btn.tiny {
+      padding: 8px 10px;
+      font-size: 12px;
+    }
     .image-preview::before {
       content: "图文排版";
       align-self: flex-start;
@@ -553,6 +659,28 @@
       padding: 28px;
       position: relative;
       overflow: hidden;
+    }
+    .xhs-card-art.has-photo {
+      justify-content: flex-end;
+      padding: 0;
+      background: #111111;
+      border: 0;
+    }
+    .xhs-card-art.has-photo::before,
+    .xhs-card-art.has-photo::after {
+      content: none;
+    }
+    .xhs-card-art.has-photo img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: brightness(1.08) contrast(1.05) saturate(1.08);
+      transform: scale(1.02);
+    }
+    .xhs-card-art.has-photo .poster-title {
+      font-size: 28px;
     }
     .xhs-slide:nth-child(even) .xhs-card-art {
       background: #e9f8ef;
@@ -1053,6 +1181,44 @@
       return uploadedPhotos.map(({ dataUrl, ...photo }) => photo);
     }
 
+    function getComposedSlides(images) {
+      const plans = images?.length ? images : buildImagePlan(latestOutput?.title || "本地生活爆款图文");
+      const count = uploadedPhotos.length ? Math.max(uploadedPhotos.length, plans.length) : plans.length;
+      return Array.from({ length: count }, (_, index) => {
+        const plan = plans[index % plans.length];
+        const photo = uploadedPhotos.length ? uploadedPhotos[index % uploadedPhotos.length] : null;
+        return { ...plan, photo, index };
+      });
+    }
+
+    function shortPosterTitle(item, index) {
+      const text = String(item.text || latestOutput?.title || "本地生活到店种草");
+      if (text.length <= 34) return text;
+      return text.slice(0, 32) + "…";
+    }
+
+    function posterHTML(item, index) {
+      const photo = item.photo;
+      if (!photo?.dataUrl) {
+        return `<div class="image-preview">${escapeHtml(item.text)}</div>`;
+      }
+      return `
+        <div class="image-preview real-photo">
+          <img src="${photo.dataUrl}" alt="${escapeHtml(photo.name || `实拍图${index + 1}`)}">
+          <div class="poster-shade"></div>
+          <div class="poster-topline">
+            <span class="poster-pill">真实到店图</span>
+            <span class="poster-pill">${escapeHtml(photo.orientation || "实拍")}</span>
+            <span class="poster-pill">${escapeHtml(photo.brightness || "已优化")}</span>
+          </div>
+          <div class="poster-page">${escapeHtml(item.page || `第${index + 1}张`)}</div>
+          <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
+          <div class="poster-note">${escapeHtml(item.note || item.visual || "保留真实感，加清楚价格、位置和到店理由。")}</div>
+          <div class="poster-sticker">${index === 0 ? "封面钩子" : `第 ${index + 1} 张`}</div>
+        </div>
+      `;
+    }
+
     function show(id, btn) {
       document.querySelectorAll("main section").forEach(s => s.classList.add("hidden"));
       document.getElementById(id).classList.remove("hidden");
@@ -1240,8 +1406,12 @@
     }
 
     function renderImages(images) {
+      const slides = getComposedSlides(images);
       document.getElementById("imageOut").innerHTML = `
-        <div class="factory-note">图片工厂不做 AI 生图。请上传或使用老板手机实拍图，再按下面方案做修图、加字、套版和图文匹配。</div>
+        <div class="factory-note">已按上传实拍图生成小红书竖版图文素材。不是 AI 生图，而是把老板原图做成“真实 + 种草感”的封面、内页、九宫格和标注图。</div>
+        <div class="actions" style="margin:12px 0">
+          <button class="btn secondary" onclick="downloadImageJpgs()">下载全部成品图 JPG</button>
+        </div>
         ${latestOutput?.benchmark?.accounts?.length ? `
           <div class="card" style="margin-bottom:12px">
             <h3>对标参考</h3>
@@ -1257,13 +1427,16 @@
           </div>
         ` : ""}
         <div class="image-grid">
-          ${images.map(item => `
+          ${slides.map((item, index) => `
             <div class="image-card">
-              <div class="image-preview">${escapeHtml(item.text)}</div>
+              ${posterHTML(item, index)}
               <div class="image-meta">
                 <strong>${escapeHtml(item.page)}</strong><br>
                 画面：${escapeHtml(item.visual)}<br>
                 备注：${escapeHtml(item.note)}
+              </div>
+              <div class="image-actions">
+                <button class="btn tiny ghost" onclick="downloadOneImage(${index})">下载这张 JPG</button>
               </div>
             </div>
           `).join("")}
@@ -1282,6 +1455,7 @@
       }
       xhsSlideIndex = 0;
       const shortBody = latestOutput.body.split("\n").slice(0, 10).join("\n");
+      const slides = getComposedSlides(latestOutput.images);
       document.getElementById("publishXhsPreview").innerHTML = `
         <div class="xhs-phone">
           <div class="xhs-status">
@@ -1296,20 +1470,35 @@
           </div>
           <div class="xhs-carousel" id="xhsCarousel">
             <div class="xhs-track" id="xhsTrack">
-              ${latestOutput.images.map((item, index) => `
+              ${slides.map((item, index) => `
                 <div class="xhs-slide">
-                  <div class="xhs-card-art">
-                    <div class="xhs-card-kicker">${escapeHtml(item.page)}</div>
-                    <div class="xhs-card-title">${escapeHtml(item.text)}</div>
-                    <div class="xhs-card-note">${escapeHtml(item.note)}</div>
-                    <div class="xhs-card-brand">特别想-Lab</div>
-                  </div>
+                  ${item.photo?.dataUrl ? `
+                    <div class="xhs-card-art has-photo">
+                      <img src="${item.photo.dataUrl}" alt="${escapeHtml(item.photo.name || `实拍图${index + 1}`)}">
+                      <div class="poster-shade"></div>
+                      <div class="poster-topline">
+                        <span class="poster-pill">真实到店图</span>
+                        <span class="poster-pill">${escapeHtml(item.photo.orientation || "实拍")}</span>
+                      </div>
+                      <div class="poster-page">${escapeHtml(item.page)}</div>
+                      <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
+                      <div class="poster-note">${escapeHtml(item.note)}</div>
+                      <div class="poster-sticker">${index === 0 ? "封面" : `第 ${index + 1} 张`}</div>
+                    </div>
+                  ` : `
+                    <div class="xhs-card-art">
+                      <div class="xhs-card-kicker">${escapeHtml(item.page)}</div>
+                      <div class="xhs-card-title">${escapeHtml(item.text)}</div>
+                      <div class="xhs-card-note">${escapeHtml(item.note)}</div>
+                      <div class="xhs-card-brand">特别想-Lab</div>
+                    </div>
+                  `}
                 </div>
               `).join("")}
             </div>
           </div>
           <div class="xhs-dots">
-            ${latestOutput.images.map((_, index) => `<span class="xhs-dot ${index === 0 ? "active" : ""}" onclick="goXhsSlide(${index})"></span>`).join("")}
+            ${slides.map((_, index) => `<span class="xhs-dot ${index === 0 ? "active" : ""}" onclick="goXhsSlide(${index})"></span>`).join("")}
           </div>
           <div class="xhs-content">
             <div class="xhs-title">${escapeHtml(latestOutput.title)}</div>
@@ -1379,20 +1568,31 @@
 
     async function downloadImageJpgs() {
       if (!latestOutput) return alert("暂无图片工厂方案");
-      for (let index = 0; index < latestOutput.images.length; index++) {
-        const blob = await renderImageCardToJpg(latestOutput.images[index], index);
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `特别想-Lab图文素材-${index + 1}.jpg`;
-        a.click();
-        URL.revokeObjectURL(url);
-        await new Promise(resolve => setTimeout(resolve, 120));
+      const slides = getComposedSlides(latestOutput.images);
+      for (let index = 0; index < slides.length; index++) {
+        await downloadPoster(slides[index], index);
       }
     }
 
-    function renderImageCardToJpg(item, index) {
-      return new Promise(resolve => {
+    async function downloadOneImage(index) {
+      if (!latestOutput) return alert("暂无图片工厂方案");
+      const slides = getComposedSlides(latestOutput.images);
+      await downloadPoster(slides[index], index);
+    }
+
+    async function downloadPoster(item, index) {
+      const blob = await renderImageCardToJpg(item, index);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `特别想-Lab小红书成品图-${index + 1}.jpg`;
+      a.click();
+      URL.revokeObjectURL(url);
+      await new Promise(resolve => setTimeout(resolve, 120));
+    }
+
+    async function renderImageCardToJpg(item, index) {
+      return new Promise(async resolve => {
         const canvas = document.createElement("canvas");
         canvas.width = 900;
         canvas.height = 1200;
@@ -1405,6 +1605,62 @@
           { bg: "#eef6ff", ink: "#11294a", accent: "#2563eb" }
         ];
         const palette = palettes[index % palettes.length];
+
+        if (item.photo?.dataUrl) {
+          const img = await loadCanvasImage(item.photo.dataUrl);
+          drawCoverImage(ctx, img, 0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = "rgba(255,255,255,.05)";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          const gradient = ctx.createLinearGradient(0, 300, 0, 1200);
+          gradient.addColorStop(0, "rgba(0,0,0,.04)");
+          gradient.addColorStop(.52, "rgba(0,0,0,.18)");
+          gradient.addColorStop(1, "rgba(0,0,0,.82)");
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.fillStyle = "rgba(255,255,255,.9)";
+          roundRect(ctx, 54, 52, 176, 46, 23);
+          ctx.fill();
+          ctx.fillStyle = "#111111";
+          ctx.font = "900 23px Microsoft YaHei, sans-serif";
+          ctx.fillText("真实到店图", 78, 83);
+
+          ctx.fillStyle = "#ff2442";
+          roundRect(ctx, 54, 118, 160, 48, 24);
+          ctx.fill();
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "900 24px Microsoft YaHei, sans-serif";
+          ctx.fillText(item.page || `第${index + 1}张`, 78, 150);
+
+          ctx.fillStyle = "#fff100";
+          roundRect(ctx, 610, 70, 210, 72, 16);
+          ctx.fill();
+          ctx.save();
+          ctx.translate(632, 113);
+          ctx.rotate(-0.04);
+          ctx.fillStyle = "#111111";
+          ctx.font = "900 28px Microsoft YaHei, sans-serif";
+          ctx.fillText(index === 0 ? "封面钩子" : `第 ${index + 1} 张`, 0, 0);
+          ctx.restore();
+
+          ctx.fillStyle = "#ffffff";
+          drawWrappedText(ctx, shortPosterTitle(item, index), 58, 820, 780, 70, "900 58px Microsoft YaHei, sans-serif", 4);
+
+          ctx.fillStyle = "rgba(255,255,255,.92)";
+          drawWrappedText(ctx, item.note || item.visual || "保留真实感，加清楚价格、位置和到店理由。", 58, 1040, 750, 34, "500 27px Microsoft YaHei, sans-serif", 3);
+
+          ctx.strokeStyle = "#fff100";
+          ctx.lineWidth = 10;
+          ctx.beginPath();
+          ctx.moveTo(58, 996);
+          ctx.lineTo(260, 996);
+          ctx.stroke();
+
+          ctx.fillStyle = "rgba(255,255,255,.86)";
+          ctx.font = "900 24px Microsoft YaHei, sans-serif";
+          ctx.fillText("特别想-Lab", 58, 1160);
+          return canvas.toBlob(blob => resolve(blob), "image/jpeg", 0.94);
+        }
 
         ctx.fillStyle = palette.bg;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1462,14 +1718,37 @@
       });
     }
 
-    function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight, font) {
+    function loadCanvasImage(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
+      });
+    }
+
+    function drawCoverImage(ctx, img, x, y, width, height) {
+      const scale = Math.max(width / img.width, height / img.height);
+      const sw = width / scale;
+      const sh = height / scale;
+      const sx = (img.width - sw) / 2;
+      const sy = (img.height - sh) / 2;
+      ctx.filter = "brightness(1.08) contrast(1.06) saturate(1.08)";
+      ctx.drawImage(img, sx, sy, sw, sh, x, y, width, height);
+      ctx.filter = "none";
+    }
+
+    function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight, font, maxLines = 99) {
       ctx.font = font;
       const chars = String(text).split("");
       let line = "";
+      let lines = 0;
       for (const char of chars) {
         const testLine = line + char;
         if (ctx.measureText(testLine).width > maxWidth && line) {
           ctx.fillText(line, x, y);
+          lines += 1;
+          if (lines >= maxLines) return;
           line = char;
           y += lineHeight;
         } else {
@@ -1502,7 +1781,8 @@
 
     function goXhsSlide(index) {
       if (!latestOutput) return;
-      xhsSlideIndex = Math.max(0, Math.min(index, latestOutput.images.length - 1));
+      const slideCount = getComposedSlides(latestOutput.images).length;
+      xhsSlideIndex = Math.max(0, Math.min(index, slideCount - 1));
       const track = document.getElementById("xhsTrack");
       if (track) track.style.transform = `translateX(${-xhsSlideIndex * 100}%)`;
       document.querySelectorAll(".xhs-dot").forEach((dot, i) => dot.classList.toggle("active", i === xhsSlideIndex));
