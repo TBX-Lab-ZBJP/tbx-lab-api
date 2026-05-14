@@ -1026,18 +1026,31 @@
             const ctx = canvas.getContext("2d");
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            let total = 0;
+            const step = Math.max(4, Math.floor(imageData.length / 4000));
+            for (let i = 0; i < imageData.length; i += step) {
+              total += (imageData[i] + imageData[i + 1] + imageData[i + 2]) / 3;
+            }
+            const brightness = Math.round(total / Math.ceil(imageData.length / step));
             resolve({
               name: file.name,
               type: "image/jpeg",
               dataUrl,
               width: canvas.width,
-              height: canvas.height
+              height: canvas.height,
+              orientation: canvas.width > canvas.height ? "横图" : canvas.width < canvas.height ? "竖图" : "方图",
+              brightness: brightness < 85 ? "偏暗" : brightness > 185 ? "偏亮" : "正常"
             });
           };
           img.src = reader.result;
         };
         reader.readAsDataURL(file);
       });
+    }
+
+    function photoPayload() {
+      return uploadedPhotos.map(({ dataUrl, ...photo }) => photo);
     }
 
     function show(id, btn) {
@@ -1145,7 +1158,7 @@
           lane: document.getElementById("lane").value,
           keyword: document.getElementById("hotKeyword").value,
           material,
-          photos: uploadedPhotos,
+          photos: photoPayload(),
           framework: "避坑警告"
         });
         result.firstComment = result.firstComment || result.first_comment || "";

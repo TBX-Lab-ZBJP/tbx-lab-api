@@ -102,6 +102,7 @@ def env_check() -> dict[str, Any]:
         "hunyuan_api_key_prefix": api_key[:6] + "***" if api_key else "",
         "hunyuan_model": os.getenv("HUNYUAN_MODEL", HUNYUAN_MODEL),
         "hunyuan_base_url": os.getenv("HUNYUAN_BASE_URL", HUNYUAN_BASE_URL),
+        "hunyuan_enable_vision": os.getenv("HUNYUAN_ENABLE_VISION", "0"),
         "allow_local_fallback": os.getenv("ALLOW_LOCAL_FALLBACK", "1"),
     }
 
@@ -247,22 +248,27 @@ images: 数组，每项包含 page、text、visual、note
 如果用户上传了图片，必须基于上传图片判断：哪张适合封面、哪张适合九宫格、哪张需要重拍、哪张适合加价签/路线/预约规则。不要假设不存在的图片内容。
 最后给出弱数据监控建议：阅读、收藏、私信/评论、团购点击、预估到店或核销。
 """.strip()
-    content: list[dict[str, Any]] = [
-        {"type": "text", "text": json.dumps(user_input, ensure_ascii=False)}
-    ]
-    for photo in user_input.get("photos", [])[:9]:
-        data_url = str(photo.get("dataUrl", ""))
-        if data_url.startswith("data:image/"):
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": data_url},
-            })
+    system_prompt += "\n如果 photos 里只有图片元数据，请只根据数量、横竖图、亮度和文件名给出图片工厂建议，不要声称已经看清图片具体内容。"
+    enable_vision = os.getenv("HUNYUAN_ENABLE_VISION", "0").strip() == "1"
+    clean_input = {**user_input, "photos": photo_metadata(user_input.get("photos", []))}
+    user_content: str | list[dict[str, Any]]
+    user_content = json.dumps(clean_input, ensure_ascii=False)
+    if enable_vision:
+        content: list[dict[str, Any]] = [{"type": "text", "text": user_content}]
+        for photo in user_input.get("photos", [])[:9]:
+            data_url = str(photo.get("dataUrl", ""))
+            if data_url.startswith("data:image/"):
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": data_url},
+                })
+        user_content = content
 
     request_body = {
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": content},
+            {"role": "user", "content": user_content},
         ],
         "temperature": 0.45,
     }
@@ -274,9 +280,34 @@ images: 数组，每项包含 page、text、visual、note
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json=request_body,
         )
+        if response.status_code == 400 and enable_vision:
+            request_body["messages"][1]["content"] = json.dumps(clean_input, ensure_ascii=False)
+            response = await client.post(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json=request_body,
+            )
     response.raise_for_status()
     content = response.json()["choices"][0]["message"]["content"]
     return parse_json(content)
+
+
+def photo_metadata(photos: Any) -> list[dict[str, Any]]:
+    if not isinstance(photos, list):
+        return []
+    metadata = []
+    for index, photo in enumerate(photos[:9]):
+        if not isinstance(photo, dict):
+            continue
+        metadata.append({
+            "index": index + 1,
+            "name": str(photo.get("name", ""))[:80],
+            "width": photo.get("width"),
+            "height": photo.get("height"),
+            "orientation": photo.get("orientation", ""),
+            "brightness": photo.get("brightness", ""),
+        })
+    return metadata
 
 
 async def generate_raw_json_with_hunyuan(prompt: str, user_input: dict[str, Any]) -> dict[str, Any]:
