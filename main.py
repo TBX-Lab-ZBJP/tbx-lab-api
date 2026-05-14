@@ -73,17 +73,33 @@ async def model_test() -> dict[str, Any]:
     if not api_key:
         raise HTTPException(status_code=500, detail="HUNYUAN_API_KEY 未配置")
 
-    result = await generate_with_hunyuan({
-        "title": "模型连通性测试",
-        "noteShape": "干货避坑",
-        "framework": "三步拆解",
-        "material": "请只返回一条很短的小红书测试文案。",
-    })
+    try:
+        result = await generate_with_hunyuan({
+            "title": "模型连通性测试",
+            "noteShape": "干货避坑",
+            "framework": "三步拆解",
+            "material": "请只返回一条很短的小红书测试文案。",
+        })
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"混元调用失败：{exc}") from exc
     return {
         "status": "ok",
         "provider": os.getenv("LLM_PROVIDER", "hunyuan"),
         "model": os.getenv("HUNYUAN_MODEL", HUNYUAN_MODEL),
         "sample_title": result.get("title", ""),
+    }
+
+
+@app.get("/api/v1/xhs/env-check")
+def env_check() -> dict[str, Any]:
+    api_key = os.getenv("HUNYUAN_API_KEY", "").strip()
+    return {
+        "provider": os.getenv("LLM_PROVIDER", "hunyuan"),
+        "has_hunyuan_api_key": bool(api_key),
+        "hunyuan_api_key_prefix": api_key[:6] + "***" if api_key else "",
+        "hunyuan_model": os.getenv("HUNYUAN_MODEL", HUNYUAN_MODEL),
+        "hunyuan_base_url": os.getenv("HUNYUAN_BASE_URL", HUNYUAN_BASE_URL),
+        "allow_local_fallback": os.getenv("ALLOW_LOCAL_FALLBACK", "1"),
     }
 
 
@@ -174,7 +190,6 @@ images: 数组，每项包含 page、text、visual、note
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(user_input, ensure_ascii=False)},
         ],
-        "response_format": {"type": "json_object"},
         "temperature": 0.45,
         "enable_enhancement": True,
     }
