@@ -414,18 +414,6 @@
         linear-gradient(180deg, rgba(0,0,0,.08) 0%, rgba(0,0,0,0) 45%, rgba(0,0,0,.18) 100%),
         linear-gradient(90deg, rgba(0,0,0,.12), rgba(0,0,0,0) 46%);
     }
-    .poster-copy-card {
-      position: absolute;
-      left: 14px;
-      right: 14px;
-      bottom: 14px;
-      z-index: 2;
-      border-radius: 14px;
-      background: rgba(255,255,255,.94);
-      color: #111111;
-      padding: 14px 14px 12px;
-      box-shadow: 0 10px 28px rgba(0,0,0,.18);
-    }
     .poster-topline,
     .poster-page,
     .poster-title,
@@ -437,7 +425,7 @@
       z-index: 2;
     }
     .poster-topline {
-      top: 16px;
+      top: 18px;
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
@@ -446,53 +434,66 @@
       display: inline-flex;
       width: fit-content;
       border-radius: 999px;
-      background: rgba(255,255,255,.86);
-      color: #111111;
-      padding: 5px 9px;
-      font-size: 12px;
+      background: rgba(255,255,255,.82);
+      color: #222222;
+      padding: 6px 10px;
+      font-size: 11px;
       font-weight: 900;
       line-height: 1;
+      box-shadow: 0 4px 14px rgba(0,0,0,.12);
     }
     .poster-page {
       top: 58px;
-      right: auto;
+      left: auto;
+      right: 18px;
       width: fit-content;
       border-radius: 999px;
-      background: #ff2442;
-      color: #ffffff;
-      padding: 6px 10px;
-      font-size: 12px;
+      background: rgba(255, 241, 0, .92);
+      color: #111111;
+      padding: 7px 10px;
+      font-size: 11px;
       font-weight: 950;
+      transform: rotate(2deg);
     }
     .poster-title {
-      position: static;
-      font-size: 25px;
-      line-height: 1.14;
+      left: 22px;
+      right: 22px;
+      bottom: 106px;
+      font-size: 30px;
+      line-height: 1.12;
       font-weight: 950;
-      color: #111111;
-      text-shadow: none;
+      color: #ffffff;
+      text-shadow:
+        0 2px 12px rgba(0,0,0,.48),
+        0 0 2px rgba(0,0,0,.75);
     }
     .poster-note {
-      position: static;
-      margin-top: 8px;
+      left: 22px;
+      right: 22px;
+      bottom: 58px;
       display: -webkit-box;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
-      color: #4b5563;
-      font-size: 13px;
+      color: rgba(255,255,255,.94);
+      font-size: 14px;
       line-height: 1.55;
+      text-shadow: 0 2px 10px rgba(0,0,0,.5);
     }
     .poster-tags {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
-      margin-top: 10px;
+      position: absolute;
+      left: 22px;
+      right: 22px;
+      bottom: 20px;
+      z-index: 2;
     }
     .poster-tag {
       border-radius: 999px;
-      background: #fff1f3;
-      color: #b42318;
+      background: rgba(255,255,255,.84);
+      color: #111111;
       padding: 5px 8px;
       font-size: 11px;
       font-weight: 900;
@@ -500,10 +501,10 @@
     .poster-sticker {
       right: 18px;
       left: auto;
-      top: 116px;
-      bottom: auto;
+      top: auto;
+      bottom: 164px;
       width: fit-content;
-      background: #fff100;
+      background: rgba(255, 241, 0, .92);
       color: #111111;
       border-radius: 8px;
       padding: 6px 9px;
@@ -708,11 +709,6 @@
       object-fit: cover;
       filter: brightness(1.08) contrast(1.05) saturate(1.08);
       transform: scale(1.02);
-    }
-    .xhs-card-art.has-photo .poster-copy-card {
-      left: 18px;
-      right: 18px;
-      bottom: 18px;
     }
     .xhs-card-art.has-photo .poster-title {
       font-size: 28px;
@@ -1255,20 +1251,17 @@
           <img src="${imgSrc}" alt="${escapeHtml(photo.name || `实拍图${index + 1}`)}">
           <div class="poster-shade"></div>
           <div class="poster-topline">
-            <span class="poster-pill">${photo.generatedUrl ? "混元优化图" : "真实到店图"}</span>
-            <span class="poster-pill">可直接发</span>
+            <span class="poster-pill">真实体验</span>
+            <span class="poster-pill">收藏备用</span>
           </div>
-          <div class="poster-page">${escapeHtml(item.page || `第${index + 1}张`)}</div>
-          <div class="poster-copy-card">
-            <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
-            <div class="poster-note">${escapeHtml(item.note || item.visual || "真实实拍图，加清楚价格、位置和到店理由。")}</div>
-            <div class="poster-tags">
-              <span class="poster-tag">收藏备用</span>
-              <span class="poster-tag">到店清单</span>
-              <span class="poster-tag">真实体验</span>
-            </div>
+          <div class="poster-page">${index + 1}/${getComposedSlides(latestOutput?.images || []).length}</div>
+          <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
+          <div class="poster-note">${escapeHtml(item.note || item.visual || "真实实拍图，加清楚价格、位置和到店理由。")}</div>
+          <div class="poster-tags">
+            <span class="poster-tag">到店清单</span>
+            <span class="poster-tag">少踩坑</span>
           </div>
-          <div class="poster-sticker">${index === 0 ? "封面钩子" : `第 ${index + 1} 张`}</div>
+          <div class="poster-sticker">${index === 0 ? "先看这篇" : "建议收藏"}</div>
         </div>
       `;
     }
@@ -1534,20 +1527,17 @@
                       <img src="${item.photo.generatedUrl || item.photo.dataUrl}" alt="${escapeHtml(item.photo.name || `实拍图${index + 1}`)}">
                       <div class="poster-shade"></div>
                       <div class="poster-topline">
-                        <span class="poster-pill">${item.photo.generatedUrl ? "混元优化图" : "真实到店图"}</span>
-                        <span class="poster-pill">可直接发</span>
+                        <span class="poster-pill">真实体验</span>
+                        <span class="poster-pill">收藏备用</span>
                       </div>
-                      <div class="poster-page">${escapeHtml(item.page)}</div>
-                      <div class="poster-copy-card">
-                        <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
-                        <div class="poster-note">${escapeHtml(item.note)}</div>
-                        <div class="poster-tags">
-                          <span class="poster-tag">收藏备用</span>
-                          <span class="poster-tag">到店清单</span>
-                          <span class="poster-tag">真实体验</span>
-                        </div>
+                      <div class="poster-page">${index + 1}/${slides.length}</div>
+                      <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
+                      <div class="poster-note">${escapeHtml(item.note)}</div>
+                      <div class="poster-tags">
+                        <span class="poster-tag">到店清单</span>
+                        <span class="poster-tag">少踩坑</span>
                       </div>
-                      <div class="poster-sticker">${index === 0 ? "封面" : `第 ${index + 1} 张`}</div>
+                      <div class="poster-sticker">${index === 0 ? "先看这篇" : "建议收藏"}</div>
                     </div>
                   ` : `
                     <div class="xhs-card-art">
@@ -1674,62 +1664,71 @@
           const img = await loadCanvasImage(item.photo.generatedUrl || item.photo.dataUrl);
           drawCoverImage(ctx, img, 0, 0, canvas.width, canvas.height);
           const gradient = ctx.createLinearGradient(0, 300, 0, 1200);
-          gradient.addColorStop(0, "rgba(0,0,0,.06)");
-          gradient.addColorStop(.56, "rgba(0,0,0,.02)");
-          gradient.addColorStop(1, "rgba(0,0,0,.28)");
+          gradient.addColorStop(0, "rgba(0,0,0,.05)");
+          gradient.addColorStop(.54, "rgba(0,0,0,0)");
+          gradient.addColorStop(1, "rgba(0,0,0,.46)");
           ctx.fillStyle = gradient;
           ctx.fillRect(0, 0, canvas.width, canvas.height);
 
           ctx.fillStyle = "rgba(255,255,255,.9)";
-          roundRect(ctx, 54, 52, 176, 46, 23);
+          roundRect(ctx, 54, 52, 138, 46, 23);
+          ctx.fill();
+          ctx.fillStyle = "#111111";
+          ctx.font = "900 22px Microsoft YaHei, sans-serif";
+          ctx.fillText("真实体验", 76, 83);
+
+          ctx.fillStyle = "rgba(255,255,255,.9)";
+          roundRect(ctx, 206, 52, 138, 46, 23);
+          ctx.fill();
+          ctx.fillStyle = "#111111";
+          ctx.font = "900 22px Microsoft YaHei, sans-serif";
+          ctx.fillText("收藏备用", 228, 83);
+
+          ctx.fillStyle = "rgba(255,241,0,.94)";
+          roundRect(ctx, 730, 64, 88, 44, 22);
           ctx.fill();
           ctx.fillStyle = "#111111";
           ctx.font = "900 23px Microsoft YaHei, sans-serif";
-          ctx.fillText(item.photo.generatedUrl ? "混元优化图" : "真实到店图", 78, 83);
-
-          ctx.fillStyle = "#ff2442";
-          roundRect(ctx, 54, 118, 160, 48, 24);
-          ctx.fill();
-          ctx.fillStyle = "#ffffff";
-          ctx.font = "900 24px Microsoft YaHei, sans-serif";
-          ctx.fillText(item.page || `第${index + 1}张`, 78, 150);
+          ctx.fillText(`${index + 1}`, 760, 94);
 
           ctx.fillStyle = "#fff100";
-          roundRect(ctx, 610, 70, 210, 72, 16);
+          roundRect(ctx, 624, 732, 194, 58, 14);
           ctx.fill();
           ctx.save();
-          ctx.translate(632, 113);
+          ctx.translate(646, 770);
           ctx.rotate(-0.04);
           ctx.fillStyle = "#111111";
-          ctx.font = "900 28px Microsoft YaHei, sans-serif";
-          ctx.fillText(index === 0 ? "封面钩子" : `第 ${index + 1} 张`, 0, 0);
+          ctx.font = "900 27px Microsoft YaHei, sans-serif";
+          ctx.fillText(index === 0 ? "先看这篇" : "建议收藏", 0, 0);
           ctx.restore();
 
+          ctx.fillStyle = "#ffffff";
+          ctx.shadowColor = "rgba(0,0,0,.52)";
+          ctx.shadowBlur = 10;
+          ctx.shadowOffsetY = 3;
+          drawWrappedText(ctx, shortPosterTitle(item, index), 58, 840, 780, 66, "900 58px Microsoft YaHei, sans-serif", 3);
+          ctx.shadowColor = "transparent";
+
           ctx.fillStyle = "rgba(255,255,255,.94)";
-          roundRect(ctx, 54, 830, 792, 284, 28);
-          ctx.fill();
-          ctx.fillStyle = "#111111";
-          drawWrappedText(ctx, shortPosterTitle(item, index), 86, 900, 720, 62, "900 52px Microsoft YaHei, sans-serif", 3);
+          ctx.shadowColor = "rgba(0,0,0,.45)";
+          ctx.shadowBlur = 8;
+          ctx.shadowOffsetY = 2;
+          drawWrappedText(ctx, item.note || item.visual || "真实实拍图，加清楚价格、位置和到店理由。", 58, 1012, 760, 36, "600 28px Microsoft YaHei, sans-serif", 2);
+          ctx.shadowColor = "transparent";
 
-          ctx.fillStyle = "#4b5563";
-          drawWrappedText(ctx, item.note || item.visual || "真实实拍图，加清楚价格、位置和到店理由。", 86, 1030, 700, 32, "500 26px Microsoft YaHei, sans-serif", 2);
-
-          const tags = ["收藏备用", "到店清单", "真实体验"];
-          let tagX = 86;
+          const tags = ["到店清单", "少踩坑"];
+          let tagX = 58;
           ctx.font = "900 22px Microsoft YaHei, sans-serif";
           for (const tag of tags) {
             const w = ctx.measureText(tag).width + 34;
-            ctx.fillStyle = "#fff1f3";
-            roundRect(ctx, tagX, 1066, w, 42, 21);
+            ctx.fillStyle = "rgba(255,255,255,.86)";
+            roundRect(ctx, tagX, 1094, w, 42, 21);
             ctx.fill();
-            ctx.fillStyle = "#b42318";
-            ctx.fillText(tag, tagX + 17, 1094);
+            ctx.fillStyle = "#111111";
+            ctx.fillText(tag, tagX + 17, 1122);
             tagX += w + 12;
           }
 
-          ctx.fillStyle = "rgba(255,255,255,.86)";
-          ctx.font = "900 24px Microsoft YaHei, sans-serif";
-          ctx.fillText("特别想-Lab", 58, 1162);
           return canvas.toBlob(blob => resolve(blob), "image/jpeg", 0.94);
         }
 
@@ -1804,9 +1803,11 @@
       const sh = height / scale;
       const sx = (img.width - sw) / 2;
       const sy = (img.height - sh) / 2;
-      ctx.filter = "brightness(1.08) contrast(1.06) saturate(1.08)";
+      ctx.filter = "brightness(1.12) contrast(1.06) saturate(1.12)";
       ctx.drawImage(img, sx, sy, sw, sh, x, y, width, height);
       ctx.filter = "none";
+      ctx.fillStyle = "rgba(255,255,255,.06)";
+      ctx.fillRect(x, y, width, height);
     }
 
     function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight, font, maxLines = 99) {
