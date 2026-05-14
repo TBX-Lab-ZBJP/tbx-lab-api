@@ -108,6 +108,55 @@ def env_check() -> dict[str, Any]:
 
 @app.post("/api/v1/xhs/hot-titles")
 async def hot_titles(payload: HotTitleRequest) -> dict[str, Any]:
+    try:
+        return await generate_hot_titles_with_hunyuan(payload)
+    except Exception:
+        if os.getenv("ALLOW_LOCAL_FALLBACK", "1") == "0":
+            raise
+        return fallback_hot_titles(payload)
+
+
+async def generate_hot_titles_with_hunyuan(payload: HotTitleRequest) -> dict[str, Any]:
+    lane = payload.lane.strip() if payload.lane.strip() in {"餐饮", "酒旅"} else "餐饮"
+    keyword = payload.keyword.strip() or ("新品种草 客单价对比 隐藏菜单" if lane == "餐饮" else "周末亲子房 海边民宿 节日套餐")
+    prompt = """
+你是本地生活小红书转化型选题策划。
+目标用户是餐饮/酒旅老板，目标不是泛流量，而是让顾客收藏、咨询、团购点击、预约、核销、到店。
+
+请基于用户输入的行业、关键词，生成 30 个“小红书本地生活转化型选题”。
+必须输出严格 JSON：
+{
+  "items": [
+    {"id":"hot_1","title":"...","platform":"小红书","heat":88,"direction":"新品种草 · 季节"}
+  ]
+}
+
+选题维度要覆盖：地域、品类、季节、节日、平台流量趋势、价格锚点、隐藏菜单/隐藏玩法、差评避坑、团购核销、周末/亲子/情侣/团建场景。
+标题要像真人运营写的，不要机械套模板，不要夸大承诺，不要写保证爆单。
+只输出 JSON，不要解释。
+""".strip()
+    result = await generate_raw_json_with_hunyuan(prompt, {
+        "lane": lane,
+        "keyword": keyword,
+        "platform": payload.platform,
+    })
+    items = result.get("items", [])
+    if not isinstance(items, list) or not items:
+        raise RuntimeError("模型没有返回有效选题")
+    normalized = []
+    for index, item in enumerate(items[:30]):
+        normalized.append({
+            "id": str(item.get("id") or f"hot_{index + 1}"),
+            "title": str(item.get("title") or "").strip(),
+            "platform": str(item.get("platform") or "小红书"),
+            "heat": int(item.get("heat") or (88 - index % 18)),
+            "direction": str(item.get("direction") or "到店理由"),
+            "keyword": keyword,
+        })
+    return {"count": len(normalized), "items": normalized}
+
+
+def fallback_hot_titles(payload: HotTitleRequest) -> dict[str, Any]:
     seeds = [
         "本周建议发新品种草，先把到店理由讲清楚",
         "客单价对比这样写，更容易让顾客觉得值",
@@ -228,6 +277,33 @@ images: 数组，每项包含 page、text、visual、note
     response.raise_for_status()
     content = response.json()["choices"][0]["message"]["content"]
     return parse_json(content)
+
+
+async def generate_raw_json_with_hunyuan(prompt: str, user_input: dict[str, Any]) -> dict[str, Any]:
+    api_key = os.getenv("HUNYUAN_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("未配置 HUNYUAN_API_KEY")
+
+    base_url = os.getenv("HUNYUAN_BASE_URL", HUNYUAN_BASE_URL).rstrip("/")
+    model = os.getenv("HUNYUAN_MODEL", HUNYUAN_MODEL)
+    request_body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": json.dumps(user_input, ensure_ascii=False)},
+        ],
+        "temperature": 0.72,
+    }
+    if "api.hunyuan.cloud.tencent.com" in base_url:
+        request_body["enable_enhancement"] = True
+    async with httpx.AsyncClient(timeout=90) as client:
+        response = await client.post(
+            f"{base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json=request_body,
+        )
+    response.raise_for_status()
+    return parse_json(response.json()["choices"][0]["message"]["content"])
 
 
 def parse_json(text: str) -> dict[str, Any]:
