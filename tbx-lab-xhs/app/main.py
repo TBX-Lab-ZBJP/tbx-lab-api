@@ -215,6 +215,7 @@ async def draft(payload: DraftRequest) -> dict[str, Any]:
         else:
             raise HTTPException(status_code=502, detail=f"国内大模型调用失败：{exc}") from exc
 
+    result = clean_generated_result(result, payload)
     result["title"] = result.get("title") or payload.title
     result["firstComment"] = result.get("firstComment") or result.get("first_comment") or "想要结构参考的朋友，评论扣「模板」。"
     result["tags"] = normalize_tags(result.get("tags"))
@@ -275,12 +276,20 @@ images: 数组，每项包含 page、text、visual、note。这里不是图片�
 不诱导扫码、加微信或站外私聊。
 不编造具体店名、地址、价格、成交数据。
 语气要像懂本地生活转化的运营顾问，清楚、克制、可执行。
-文案必须是填空式可控结构，不要像全自动生成；尽量体现地点、品类、情绪、钩子、价格锚点、到店理由。
+文案必须像真实用户发的小红书笔记，不要像广告、招商页或机构营销话术。
+每次生成都要换一种内容结构，不要固定三段式。可选结构包括：
+1. 真实体验日记：先讲自己为什么去，再讲实际感受和适合人群。
+2. 收藏清单：适合谁、怎么订、到店注意、哪个时间段更舒服。
+3. 避坑提醒：哪些情况要提前问清楚，哪些人不一定适合。
+4. 对比选择：同价位怎么选、周末和平日怎么选、情侣/亲子/团建怎么选。
+5. 路线攻略：怎么到、附近怎么玩、几点去更合适。
+不要使用“爆款”“引流”“转化”“私域”“成交”这类后台词。
+尽量体现地点、品类、情绪、钩子、价格锚点、到店理由。
 图片工厂不是建议文档，而是直接生成一套可发布的小红书图文笔记成品页内容。
 核心是把老板手机实拍图变成“真实 + 种草感”的图文：清晰实拍图、强钩子标题、价格/位置/到店理由标签、九宫格节奏、评论区承接。
 不要输出“建议加”“可以写”“适合放”这类建议式句子。要输出能直接放在图片上的标题和短句。
 如果只有图片元数据，请根据标题、行业、填空信息、图片数量/横竖图/亮度来分配页面角色；不要声称看清了具体画面细节。
-成品页节奏建议：第 1 张封面强钩子，第 2-4 张展示真实场景和核心卖点，第 5 张价格/套餐/性价比，第 6 张位置/路线/预约规则，第 7-9 张避坑或到店清单。
+成品页节奏每次都要有变化。可以参考小红书常见笔记结构：封面疑问句、真实体验页、细节特写页、价格/预约页、避坑页、路线页、收藏清单页。不要所有图片都用同一种口吻。
 最后给出弱数据监控建议：阅读、收藏、私信/评论、团购点击、预估到店或核销。
 """.strip()
     system_prompt += "\n再次强调：images 必须是可直接渲染成图片的成品文案，不是执行建议。"
@@ -471,19 +480,37 @@ def parse_json(text: str) -> dict[str, Any]:
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
         cleaned = re.sub(r"\s*```$", "", cleaned)
+    decoder = json.JSONDecoder()
     try:
-        return json.loads(cleaned)
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, str):
+            return parse_json(parsed)
+        if isinstance(parsed, dict):
+            return parsed
     except json.JSONDecodeError:
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        if start >= 0 and end > start:
+        pass
+    for match in re.finditer(r"\{", cleaned):
+        try:
+            parsed, _ = decoder.raw_decode(cleaned[match.start():])
+            if isinstance(parsed, str):
+                return parse_json(parsed)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            continue
+    match = re.search(r'"title"\s*:', cleaned)
+    if match:
+        start = cleaned.rfind("{", 0, match.start())
+        if start >= 0:
             try:
-                return json.loads(cleaned[start : end + 1])
+                parsed, _ = decoder.raw_decode(cleaned[start:])
+                if isinstance(parsed, dict):
+                    return parsed
             except json.JSONDecodeError:
                 pass
     return {
         "title": "本地生活转化型笔记",
-        "body": cleaned,
+        "body": cleaned[:1200],
         "tags": ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "团购套餐"],
         "firstComment": "想看具体套餐、位置或预约方式，可以评论区问。",
         "images": image_plan("本地生活转化型笔记"),
@@ -498,6 +525,23 @@ def scan_text(text: str) -> dict[str, Any]:
         "score": max(0, 100 - len(hits) * 15),
         "suggestions": ["删除或替换命中风险词", "避免承诺效果、官方身份或站外导流", "改成平台内评论区关键词承接"] if hits else ["未发现内置风险词", "发布前仍需人工复核事实、价格、品牌身份和案例真实性"],
     }
+
+
+def clean_generated_result(result: dict[str, Any], payload: DraftRequest) -> dict[str, Any]:
+    body = result.get("body", "")
+    if isinstance(body, (dict, list)):
+        body = ""
+    body = str(body).strip()
+    if re.search(r'"title"\s*:|"body"\s*:|"images"\s*:', body):
+        reparsed = parse_json(body)
+        if reparsed is not result and reparsed.get("body") and not isinstance(reparsed.get("body"), (dict, list)):
+            result = {**result, **reparsed}
+            body = str(result.get("body", "")).strip()
+    if not body or re.search(r'"title"\s*:|"body"\s*:|"images"\s*:', body):
+        result["body"] = fallback_draft(payload)["body"]
+    else:
+        result["body"] = body
+    return result
 
 
 def normalize_tags(tags: Any) -> list[str]:
