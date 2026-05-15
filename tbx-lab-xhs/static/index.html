@@ -184,6 +184,59 @@
       min-height: 118px;
       resize: vertical;
     }
+    .style-selector {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin: -2px 0 18px;
+    }
+    .style-card {
+      border: 1px solid #d7dde7;
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+      text-align: left;
+      cursor: pointer;
+      min-height: 96px;
+      transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+    }
+    .style-card.active {
+      border-color: #111111;
+      background: #fffaf3;
+      box-shadow: 0 0 0 2px rgba(17, 17, 17, .08);
+    }
+    .style-card strong {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 6px;
+      color: #111827;
+    }
+    .style-card small {
+      display: block;
+      color: #667085;
+      line-height: 1.45;
+    }
+    .style-sample {
+      margin-top: 8px;
+      color: #1f2937;
+      font-size: 16px;
+    }
+    .style-card[data-style="modern"] .style-sample {
+      font-family: "Source Han Sans SC", "Noto Sans SC", "Alibaba PuHuiTi", "Microsoft YaHei UI", sans-serif;
+      font-weight: 300;
+    }
+    .style-card[data-style="handwarm"] .style-sample {
+      font-family: "LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", "Microsoft YaHei UI", sans-serif;
+      font-weight: 500;
+    }
+    .style-card[data-style="serif"] .style-sample {
+      font-family: "Source Han Serif SC", "Noto Serif SC", "LXGW WenKai", "SimSun", serif;
+      font-weight: 600;
+    }
+    .style-card[data-style="boldshop"] .style-sample {
+      font-family: "Alimama DaoLiTi", "Microsoft YaHei UI", "SimHei", sans-serif;
+      font-weight: 900;
+    }
     .btn {
       border: 0;
       border-radius: 8px;
@@ -435,6 +488,46 @@
       text-shadow: 0 3px 14px rgba(45, 30, 18, .42);
       transform: rotate(-2deg);
     }
+    .style-modern .poster-title {
+      font-family: "Source Han Sans SC", "Noto Sans SC", "Alibaba PuHuiTi", "Microsoft YaHei UI", sans-serif;
+      font-weight: 300;
+      color: #fbf7ef;
+      letter-spacing: 0;
+      transform: rotate(-1deg);
+    }
+    .style-modern .poster-note {
+      font-family: "Source Han Sans SC", "Noto Sans SC", "Alibaba PuHuiTi", "Microsoft YaHei UI", sans-serif;
+      font-weight: 400;
+      color: rgba(251, 247, 239, .9);
+    }
+    .style-handwarm .poster-title,
+    .style-handwarm .poster-note,
+    .style-handwarm .poster-doodle {
+      font-family: "LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", "Microsoft YaHei UI", sans-serif;
+    }
+    .style-serif .poster-title {
+      font-family: "Source Han Serif SC", "Noto Serif SC", "LXGW WenKai", "SimSun", serif;
+      font-weight: 600;
+      color: #fff4df;
+      transform: rotate(-1.5deg);
+    }
+    .style-serif .poster-note {
+      font-family: "Source Han Serif SC", "Noto Serif SC", "LXGW WenKai", "SimSun", serif;
+      font-weight: 500;
+      color: rgba(255, 244, 223, .9);
+    }
+    .style-boldshop .poster-title {
+      font-family: "Alimama DaoLiTi", "Microsoft YaHei UI", "SimHei", sans-serif;
+      font-weight: 900;
+      color: #fff1b8;
+      transform: rotate(-2deg);
+      text-shadow: 0 4px 16px rgba(28, 22, 12, .48);
+    }
+    .style-boldshop .poster-note {
+      font-family: "Microsoft YaHei UI", "SimHei", sans-serif;
+      font-weight: 700;
+      color: rgba(255, 248, 226, .92);
+    }
     .poster-note {
       left: 22px;
       right: 22px;
@@ -458,6 +551,10 @@
       font-family: "LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", "Microsoft YaHei UI", sans-serif;
       font-size: 17px;
       transform: rotate(-6deg);
+    }
+    .style-modern .poster-doodle,
+    .style-serif .poster-doodle {
+      font-family: "LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", serif;
     }
     .layout-checklist .poster-title {
       top: 92px;
@@ -906,6 +1003,7 @@
     @media (max-width: 980px) {
       .material-pack-grid { grid-template-columns: 1fr; }
       .topic-prompts { grid-template-columns: 1fr; }
+      .style-selector { grid-template-columns: 1fr; }
     }
     .hidden { display: none; }
     .review-list label {
@@ -1065,6 +1163,31 @@
                 <option value="图片工厂方案">图片工厂方案</option>
               </select>
             </label>
+            <div class="field">
+              <span>成品图文字风格</span>
+              <div class="style-selector" id="posterStyleSelector">
+                <button type="button" class="style-card" data-style="modern" onclick="selectPosterStyle('modern')">
+                  <strong>现代瘦体</strong>
+                  <small>适合高端酒旅、咖啡、轻食，偏杂志感。</small>
+                  <div class="style-sample">住这儿太治愈了吧</div>
+                </button>
+                <button type="button" class="style-card active" data-style="handwarm" onclick="selectPosterStyle('handwarm')">
+                  <strong>手写温柔</strong>
+                  <small>适合民宿、烘焙、女性向，偏治愈真实。</small>
+                  <div class="style-sample">睁眼就是浪声和光</div>
+                </button>
+                <button type="button" class="style-card" data-style="serif" onclick="selectPosterStyle('serif')">
+                  <strong>复古质感</strong>
+                  <small>适合西餐、私厨、买手店，偏高级氛围。</small>
+                  <div class="style-sample">周末值得慢下来</div>
+                </button>
+                <button type="button" class="style-card" data-style="boldshop" onclick="selectPosterStyle('boldshop')">
+                  <strong>粗体探店</strong>
+                  <small>适合火锅、烧烤、探店推荐，偏强种草。</small>
+                  <div class="style-sample">巨巨巨好吃</div>
+                </button>
+              </div>
+            </div>
             <div class="card" style="background:#f8f8f8;margin-bottom:13px">
               <h3>后台固定参考方向</h3>
               <div class="muted">不做 AI 生图。图片工厂只解决“商家手机烂图怎么变可发”：修曝光色温、加价签和卖点标注、套九宫格/对比图、检查图文是否匹配。</div>
@@ -1166,6 +1289,75 @@
     let latestOutput = null;
     let xhsSlideIndex = 0;
     let uploadedPhotos = [];
+    let posterStyle = "handwarm";
+    let generationSeed = 0;
+
+    const posterStylePresets = {
+      modern: {
+        label: "现代瘦体",
+        titleFont: '"Source Han Sans SC", "Noto Sans SC", "Alibaba PuHuiTi", "Microsoft YaHei UI", sans-serif',
+        noteFont: '"Source Han Sans SC", "Noto Sans SC", "Alibaba PuHuiTi", "Microsoft YaHei UI", sans-serif',
+        titleWeight: 300,
+        noteWeight: 400,
+        ink: "#fbf7ef",
+        noteInk: "rgba(251,247,239,.9)"
+      },
+      handwarm: {
+        label: "手写温柔",
+        titleFont: '"LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", "Microsoft YaHei UI", sans-serif',
+        noteFont: '"LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", "Microsoft YaHei UI", sans-serif',
+        titleWeight: 500,
+        noteWeight: 500,
+        ink: "#fff8ee",
+        noteInk: "rgba(255,248,238,.92)"
+      },
+      serif: {
+        label: "复古质感",
+        titleFont: '"Source Han Serif SC", "Noto Serif SC", "LXGW WenKai", "SimSun", serif',
+        noteFont: '"Source Han Serif SC", "Noto Serif SC", "LXGW WenKai", "SimSun", serif',
+        titleWeight: 600,
+        noteWeight: 500,
+        ink: "#fff4df",
+        noteInk: "rgba(255,244,223,.9)"
+      },
+      boldshop: {
+        label: "粗体探店",
+        titleFont: '"Alimama DaoLiTi", "Microsoft YaHei UI", "SimHei", sans-serif',
+        noteFont: '"Microsoft YaHei UI", "SimHei", sans-serif',
+        titleWeight: 900,
+        noteWeight: 700,
+        ink: "#fff1b8",
+        noteInk: "rgba(255,248,226,.92)"
+      }
+    };
+
+    function currentPosterStyle() {
+      return posterStylePresets[posterStyle] || posterStylePresets.handwarm;
+    }
+
+    function selectPosterStyle(style) {
+      posterStyle = posterStylePresets[style] ? style : "handwarm";
+      document.querySelectorAll(".style-card").forEach(card => {
+        card.classList.toggle("active", card.dataset.style === posterStyle);
+      });
+      if (latestOutput) {
+        renderImages(latestOutput.images || []);
+        if (document.getElementById("identityCheck")?.checked) {
+          renderPublishPreview();
+        }
+      }
+    }
+
+    function posterStyleClass() {
+      return `style-${posterStyle}`;
+    }
+
+    function canvasTextFont(role, size) {
+      const preset = currentPosterStyle();
+      const weight = role === "title" ? preset.titleWeight : preset.noteWeight;
+      const stack = role === "title" ? preset.titleFont : preset.noteFont;
+      return `${weight} ${size}px ${stack}`;
+    }
 
     async function apiPost(path, payload) {
       const response = await fetch(path, {
@@ -1321,7 +1513,7 @@
     }
 
     function pickLayout(index, item = {}) {
-      const seed = `${latestOutput?.title || ""}${item.text || ""}${index}${Date.now()}`;
+      const seed = `${latestOutput?.title || ""}${item.text || ""}${index}${posterStyle}${generationSeed}`;
       let hash = 0;
       for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
       const layouts = ["diary", "checklist", "corner", "soft", "question"];
@@ -1385,7 +1577,7 @@
       }
       const imgSrc = photo.generatedUrl || photo.dataUrl;
       return `
-        <div class="image-preview real-photo layout-${item.layout}">
+        <div class="image-preview real-photo layout-${item.layout} ${posterStyleClass()}">
           <img src="${imgSrc}" alt="${escapeHtml(photo.name || `实拍图${index + 1}`)}">
           <div class="poster-shade"></div>
           <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
@@ -1398,7 +1590,7 @@
     function collageHTML(item, index) {
       const cols = item.layout === "grid9" ? 3 : 2;
       return `
-        <div class="image-preview real-photo collage-poster">
+        <div class="image-preview real-photo collage-poster ${posterStyleClass()}">
           <div class="collage-grid" style="grid-template-columns: repeat(${cols}, 1fr)">
             ${item.photoGroup.map(photo => `<img src="${photo.generatedUrl || photo.dataUrl}" alt="${escapeHtml(photo.name || "实拍图")}">`).join("")}
           </div>
@@ -1508,6 +1700,7 @@
       }
       document.getElementById("copyOut").innerHTML = "正在调用腾讯混元生成，请稍等。";
       try {
+        generationSeed = Date.now();
         await analyzeUploadedPhotos(title, material);
         const result = await apiPost("/api/v1/xhs/draft", {
           title,
@@ -1872,7 +2065,8 @@
           ctx.fillStyle = gradient;
           ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-          ctx.fillStyle = "#ffffff";
+          const stylePreset = currentPosterStyle();
+          ctx.fillStyle = stylePreset.ink;
           ctx.shadowColor = "rgba(0,0,0,.52)";
           ctx.shadowBlur = 10;
           ctx.shadowOffsetY = 3;
@@ -1883,10 +2077,10 @@
             soft: [58, 900, 780, 58, 48],
             question: [58, 640, 680, 70, 62]
           }[layout] || [58, 840, 780, 66, 58];
-          drawWrappedText(ctx, shortPosterTitle(item, index), titlePos[0], titlePos[1], titlePos[2], titlePos[3], `500 ${titlePos[4]}px KaiTi, STKaiti, Microsoft YaHei UI, sans-serif`, 3);
+          drawWrappedText(ctx, shortPosterTitle(item, index), titlePos[0], titlePos[1], titlePos[2], titlePos[3], canvasTextFont("title", titlePos[4]), 3);
           ctx.shadowColor = "transparent";
 
-          ctx.fillStyle = "rgba(255,255,255,.94)";
+          ctx.fillStyle = stylePreset.noteInk;
           ctx.shadowColor = "rgba(0,0,0,.45)";
           ctx.shadowBlur = 8;
           ctx.shadowOffsetY = 2;
@@ -1898,7 +2092,7 @@
             question: [58, 796, 680]
           }[layout] || [58, 1012, 760];
           if (layout !== "soft") {
-            drawWrappedText(ctx, shortPosterNote(item, index), notePos[0], notePos[1], notePos[2], 36, "600 28px Microsoft YaHei, sans-serif", 2);
+            drawWrappedText(ctx, shortPosterNote(item, index), notePos[0], notePos[1], notePos[2], 36, canvasTextFont("note", 28), 2);
           }
           ctx.shadowColor = "transparent";
 
@@ -2010,14 +2204,15 @@
       gradient.addColorStop(1, "rgba(0,0,0,.66)");
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
-      ctx.fillStyle = "#ffffff";
+      const stylePreset = currentPosterStyle();
+      ctx.fillStyle = stylePreset.ink;
       ctx.shadowColor = "rgba(0,0,0,.52)";
       ctx.shadowBlur = 10;
       ctx.shadowOffsetY = 3;
-      drawWrappedText(ctx, shortPosterTitle(item, index), 58, 890, 780, 64, "900 58px Microsoft YaHei UI, Microsoft YaHei, sans-serif", 2);
+      drawWrappedText(ctx, shortPosterTitle(item, index), 58, 890, 780, 64, canvasTextFont("title", 58), 2);
       ctx.shadowColor = "transparent";
-      ctx.fillStyle = "rgba(255,255,255,.94)";
-      drawWrappedText(ctx, shortPosterNote(item, index), 58, 1038, 760, 36, "700 30px Microsoft YaHei, sans-serif", 2);
+      ctx.fillStyle = stylePreset.noteInk;
+      drawWrappedText(ctx, shortPosterNote(item, index), 58, 1038, 760, 36, canvasTextFont("note", 30), 2);
       drawLightDoodle(ctx, index, 62, 1110);
     }
 
@@ -2025,10 +2220,11 @@
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(-0.08);
-      ctx.fillStyle = "rgba(255,248,238,.94)";
-      ctx.font = "500 34px KaiTi, STKaiti, Microsoft YaHei UI, sans-serif";
+      const stylePreset = currentPosterStyle();
+      ctx.fillStyle = stylePreset.noteInk;
+      ctx.font = canvasTextFont("note", 34);
       ctx.fillText(posterDoodle(index), 0, 0);
-      ctx.strokeStyle = "rgba(255,248,238,.72)";
+      ctx.strokeStyle = posterStyle === "boldshop" ? "rgba(255,241,184,.7)" : "rgba(255,248,238,.72)";
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(42, -8);
