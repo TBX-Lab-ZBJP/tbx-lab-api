@@ -1,6 +1,3 @@
-import datetime
-import hashlib
-import hmac
 import json
 import os
 import re
@@ -73,30 +70,16 @@ class HotTitleRequest(BaseModel):
 
 class DraftRequest(BaseModel):
     title: str
-    outputType: str = "标准文案"
-    noteShape: str = "干货避坑"
+    outputType: str = "标准笔记素材包"
+    noteShape: str = "标准笔记素材包"
     framework: str = "避坑警告"
     lane: str = ""
     keyword: str = ""
     material: str = ""
-    photos: list[dict[str, Any]] = []
 
 
 class ScanRequest(BaseModel):
     text: str = ""
-
-
-class ImageFactoryRequest(BaseModel):
-    title: str = ""
-    material: str = ""
-    images: list[dict[str, Any]] = []
-    photos: list[dict[str, Any]] = []
-
-
-class ImageAnalysisRequest(BaseModel):
-    title: str = ""
-    material: str = ""
-    photos: list[dict[str, Any]] = []
 
 
 @app.get("/")
@@ -114,13 +97,11 @@ async def model_test() -> dict[str, Any]:
     api_key = os.getenv("HUNYUAN_API_KEY", "").strip()
     if not api_key:
         raise HTTPException(status_code=500, detail="HUNYUAN_API_KEY 未配置")
-
     try:
         result = await generate_with_hunyuan({
             "title": "模型连通性测试",
-            "noteShape": "干货避坑",
-            "framework": "三步拆解",
             "material": "请只返回一条很短的小红书测试文案。",
+            "lane": "餐饮",
         })
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"混元调用失败：{exc}") from exc
@@ -141,7 +122,6 @@ def env_check() -> dict[str, Any]:
         "hunyuan_api_key_prefix": api_key[:6] + "***" if api_key else "",
         "hunyuan_model": os.getenv("HUNYUAN_MODEL", HUNYUAN_MODEL),
         "hunyuan_base_url": os.getenv("HUNYUAN_BASE_URL", HUNYUAN_BASE_URL),
-        "hunyuan_enable_vision": os.getenv("HUNYUAN_ENABLE_VISION", "0"),
         "allow_local_fallback": os.getenv("ALLOW_LOCAL_FALLBACK", "1"),
     }
 
@@ -157,25 +137,23 @@ async def hot_titles(payload: HotTitleRequest) -> dict[str, Any]:
 
 
 async def generate_hot_titles_with_hunyuan(payload: HotTitleRequest) -> dict[str, Any]:
-    lane = payload.lane.strip() if payload.lane.strip() in {"餐饮", "酒旅"} else "餐饮"
+    # 说明：当前数据来源为基于硬编码参考池的 LLM 改写，
+    # 不是真实小红书实时数据。产品文案已统一改为"参考"口径，
+    # 真实数据接入后再升级此处。
+    lane = payload.lane.strip() if payload.lane.strip() in REFERENCE_TOPICS else "餐饮"
     keyword = payload.keyword.strip() or ("新品种草 客单价对比 隐藏菜单" if lane == "餐饮" else "周末亲子房 海边民宿 节日套餐")
     reference_pool = REFERENCE_TOPICS[lane]
     prompt = """
-你是本地生活小红书转化型选题策划。
-目标用户是餐饮/酒旅老板，目标不是泛流量，而是让顾客收藏、咨询、团购点击、预约、核销、到店。
-
-请基于用户输入的行业、关键词，以及提供的真实感参考结构，生成 30 个“小红书本地生活转化型参考选题”。
-注意：这不是实时抓取小红书热门榜，不要声称“全网热门”或“真实爆款数据”。你是在参考池基础上做二次改写。
+你是本地生活小红书转化型选题策划。目标用户是餐饮/酒旅老板，目标不是泛流量，而是让顾客收藏、咨询、团购点击、预约、核销、到店。
+请基于用户输入的行业、关键词，以及提供的行业爆款标题参考，生成 30 个“小红书本地生活爆款选题参考”。
+注意：这不是实时抓取小红书榜单，不要声称“真实实时数据”。你是在参考池基础上做二次改写。
 必须输出严格 JSON：
 {
   "items": [
-    {"id":"hot_1","title":"...","platform":"小红书","heat":88,"direction":"新品种草 · 季节","source_style":"真实体验日记","image_need":["窗景","卧室"]}
+    {"id":"hot_1","title":"...","platform":"小红书","heat":88,"direction":"新品种草 · 季节","source_style":"真实体验日记"}
   ]
 }
-
-选题维度要覆盖：地域、品类、季节、节日、平台流量趋势、价格锚点、隐藏菜单/隐藏玩法、差评避坑、团购核销、周末/亲子/情侣/团建场景。
-标题要像真人运营写的，不要机械套模板，不要夸大承诺，不要写保证爆单。
-只输出 JSON，不要解释。
+标题要像真实运营写的，不要夸大承诺，不要写保证爆单。只输出 JSON。
 """.strip()
     result = await generate_raw_json_with_hunyuan(prompt, {
         "lane": lane,
@@ -191,18 +169,17 @@ async def generate_hot_titles_with_hunyuan(payload: HotTitleRequest) -> dict[str
         normalized.append({
             "id": str(item.get("id") or f"hot_{index + 1}"),
             "title": str(item.get("title") or "").strip(),
-            "platform": str(item.get("platform") or "小红书"),
+            "platform": str(item.get("platform") or payload.platform or "小红书"),
             "heat": int(item.get("heat") or (88 - index % 18)),
             "direction": str(item.get("direction") or "到店理由"),
             "source_style": str(item.get("source_style") or item.get("style") or reference_pool[index % len(reference_pool)]["style"]),
-            "image_need": item.get("image_need") if isinstance(item.get("image_need"), list) else [],
             "keyword": keyword,
         })
     return {"count": len(normalized), "items": normalized}
 
 
 def fallback_hot_titles(payload: HotTitleRequest) -> dict[str, Any]:
-    lane = payload.lane.strip() if payload.lane.strip() in {"餐饮", "酒旅"} else "餐饮"
+    lane = payload.lane.strip() if payload.lane.strip() in REFERENCE_TOPICS else "餐饮"
     pool = REFERENCE_TOPICS[lane]
     modifiers = ["周末版", "七夕版", "避坑版", "收藏版", "第一次来版", "适合朋友版", "性价比版", "真实体验版"]
     platforms = [payload.platform or "小红书", "抖音"]
@@ -210,12 +187,11 @@ def fallback_hot_titles(payload: HotTitleRequest) -> dict[str, Any]:
     items = []
     for index in range(30):
         base = pool[index % len(pool)]
-        modifier = modifiers[index % len(modifiers)]
         title = base["title"]
         if keyword and index % 3 == 0:
             title = f"{keyword.split()[0]}｜{title}"
         if index >= len(pool):
-            title = f"{title}（{modifier}）"
+            title = f"{title}（{modifiers[index % len(modifiers)]}）"
         items.append({
             "id": f"hot_{index + 1}",
             "title": title,
@@ -223,7 +199,6 @@ def fallback_hot_titles(payload: HotTitleRequest) -> dict[str, Any]:
             "heat": 72 + ((index * 7) % 27),
             "direction": base["direction"],
             "source_style": base["style"],
-            "image_need": ["窗景", "卧室"] if lane == "酒旅" else ["菜品", "菜单"],
             "keyword": keyword,
         })
     return {"count": len(items), "items": items}
@@ -250,42 +225,10 @@ async def draft(payload: DraftRequest) -> dict[str, Any]:
     result["firstComment"] = result.get("firstComment") or result.get("first_comment") or "想要结构参考的朋友，评论扣「模板」。"
     result["tags"] = normalize_tags(result.get("tags"))
     result["benchmark"] = result.get("benchmark") or fixed_benchmark()
-    result["images"] = result.get("images") or image_plan(result["title"])
     result["compliance"] = scan_text(json.dumps(result, ensure_ascii=False))
     result["status"] = "employee_review_required"
+    result["outputType"] = "标准笔记素材包"
     return result
-
-
-@app.post("/api/v1/xhs/image-factory")
-async def image_factory(payload: ImageFactoryRequest) -> dict[str, Any]:
-    if os.getenv("HUNYUAN_IMAGE_ENABLED", "0").strip() != "1":
-        return {"provider": "local_layout", "items": []}
-
-    photos = [photo for photo in payload.photos[:9] if str(photo.get("dataUrl", "")).startswith("data:image/")]
-    if not photos:
-        return {"provider": "hunyuan_aiart", "items": []}
-
-    items = []
-    for index, photo in enumerate(photos):
-        plan = payload.images[index % len(payload.images)] if payload.images else {}
-        try:
-            result_image = await call_hunyuan_image_to_image(photo, plan, payload, index)
-        except Exception as exc:
-            items.append({"index": index, "error": str(exc)})
-            continue
-        items.append({"index": index, "image": result_image})
-    return {"provider": "hunyuan_aiart", "items": items}
-
-
-@app.post("/api/v1/xhs/image-analysis")
-async def image_analysis(payload: ImageAnalysisRequest) -> dict[str, Any]:
-    if os.getenv("HUNYUAN_VISION_ENABLED", "0").strip() != "1":
-        return {"provider": "disabled", "items": []}
-    try:
-        items = await analyze_photos_with_hunyuan(payload)
-    except Exception as exc:
-        return {"provider": "hunyuan_vision", "items": [], "error": str(exc)}
-    return {"provider": "hunyuan_vision", "items": items}
 
 
 async def generate_with_hunyuan(user_input: dict[str, Any]) -> dict[str, Any]:
@@ -296,272 +239,57 @@ async def generate_with_hunyuan(user_input: dict[str, Any]) -> dict[str, Any]:
     base_url = os.getenv("HUNYUAN_BASE_URL", HUNYUAN_BASE_URL).rstrip("/")
     model = os.getenv("HUNYUAN_MODEL", HUNYUAN_MODEL)
     system_prompt = """
-你是“特别想-Lab”的本地生活小红书带客工具，第一批目标用户是餐饮和酒旅老板。
+你是“特别想-Lab”的本地生活小红书带客素材包工具，第一批目标用户是餐饮和酒旅老板。
 老板真正付费的不是内容工具，而是带客结果：收藏、咨询、团购点击、预约、核销、到店。
-你要根据行业、转化型选题、店铺信息、菜品/房型/价格/位置/规则，生成可审核、可手动发布的小红书图文笔记。
-
+你要根据行业、爆款选题参考、店铺信息、菜品/房型/价格/位置/规则，生成可审核、可手动发布的小红书标准笔记素材包。
 必须输出严格 JSON，不要 Markdown，不要代码块。字段：
 title: 字符串
 body: 字符串，包含完整正文
 tags: 字符串数组，8 到 12 个标签，不带 # 号
 firstComment: 字符串
-images: 数组，每项包含 page、text、visual、note、photo_index。这里不是图片建议，而是直接可渲染到图片上的成品页内容：
-- page: 页面角色，如 封面、环境页、房型页、价格页、位置页、预约页、避坑页
-- text: 直接压在图片上的大标题，6 到 16 字，必须通用、口语、情绪化。酒旅/民宿类多用“好温馨”“住得好舒服”“海景好治愈”“老板人很好”“下次还想来”；餐饮类多用“巨巨巨好吃”“种草了姐妹们”“强烈推荐”“这家真的可”“下次还来”。不要写复杂信息。
-- visual: 本页使用的排版模板和图片角色，写给系统渲染用，不要写给老板看的建议
-- note: 直接压在图片上的副标题或卖点短句，8 到 22 字，继续保持真实用户口吻
-- photo_index: 使用第几张上传图片，必须根据 photos 里的图片识别结果匹配，不要乱配
-
+benchmark: 对标参考对象，包含 accounts、notes、usage
 安全要求：
-不声称是字节、抖音、小红书官方或官方服务商。
-不承诺 GMV、ROI、爆单、第一、唯一、全网最低。
-不诱导扫码、加微信或站外私聊。
-不编造具体店名、地址、价格、成交数据。
-语气要像懂本地生活转化的运营顾问，清楚、克制、可执行。
+1. 不声称是字节、抖音、小红书官方或官方服务商。
+2. 不承诺 GMV、ROI、爆单、第一、唯一、全网最低。
+3. 不诱导扫码、加微信或站外私聊。
+4. 不编造具体店名、地址、价格、成交数据。
 文案必须像真实用户发的小红书笔记，不要像广告、招商页或机构营销话术。
-正文允许自然使用 emoji，建议 5 到 10 个，例如 🌊 🏠 ✨ 📍 💰 📝 ⚠️ ✅，但不要每句话都塞。
-每次生成都要换一种内容结构，不要固定三段式。可选结构包括：
-1. 真实体验日记：先讲自己为什么去，再讲实际感受和适合人群。
-2. 收藏清单：适合谁、怎么订、到店注意、哪个时间段更舒服。
-3. 避坑提醒：哪些情况要提前问清楚，哪些人不一定适合。
-4. 对比选择：同价位怎么选、周末和平日怎么选、情侣/亲子/团建怎么选。
-5. 路线攻略：怎么到、附近怎么玩、几点去更合适。
-不要使用“爆款”“引流”“转化”“私域”“成交”这类后台词。
-尽量体现地点、品类、情绪、钩子、价格锚点、到店理由。
-图片工厂不是建议文档，而是直接生成一套可发布的小红书图文笔记成品页内容。
-核心是把老板手机实拍图变成“真实 + 种草感”的图文：清晰实拍图、强钩子标题、价格/位置/到店理由标签、九宫格节奏、评论区承接。
-不要输出“建议加”“可以写”“适合放”这类建议式句子。要输出能直接放在图片上的标题和短句。
-图片上的文字不要像广告标题，不要写复杂规则；优先写情绪化通用短句，像真实用户随手加字。
-如果只有图片元数据，请根据标题、行业、填空信息、图片数量/横竖图/亮度来分配页面角色；不要声称看清了具体画面细节。
-成品页节奏每次都要有变化。可以参考小红书常见笔记结构：封面疑问句、真实体验页、细节特写页、价格/预约页、避坑页、路线页、收藏清单页。不要所有图片都用同一种口吻。
-如果 photos 里包含 description、scene、usable_for、caption_hint，必须优先根据这些图片识别结果安排 photo_index：
-窗景/海景图适合封面、氛围页、位置页；卧室图适合房型/睡眠体验；客厅图适合空间感/适合几人；菜单/团购截图适合价格和预约规则；门头/路线图适合位置页。
-不要把图片没有拍到的内容写到那张图上。
-最后给出弱数据监控建议：阅读、收藏、私信/评论、团购点击、预估到店或核销。
+正文允许自然使用 5 到 10 个 emoji，但不要每句话都堆。
+不要使用“实时榜单”“真实实时数据”口径，统一使用“爆款选题参考”“行业爆款标题”口径。
 """.strip()
-    system_prompt += "\n再次强调：images 必须是可直接渲染成图片的成品文案，不是执行建议。"
-    enable_vision = os.getenv("HUNYUAN_ENABLE_VISION", "0").strip() == "1"
-    clean_input = {**user_input, "photos": photo_metadata(user_input.get("photos", []))}
-    user_content: str | list[dict[str, Any]]
-    user_content = json.dumps(clean_input, ensure_ascii=False)
-    if enable_vision:
-        content: list[dict[str, Any]] = [{"type": "text", "text": user_content}]
-        for photo in user_input.get("photos", [])[:9]:
-            data_url = str(photo.get("dataUrl", ""))
-            if data_url.startswith("data:image/"):
-                content.append({
-                    "type": "image_url",
-                    "image_url": {"url": data_url},
-                })
-        user_content = content
-
     request_body = {
         "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
+            {"role": "user", "content": json.dumps(user_input, ensure_ascii=False)},
         ],
         "temperature": 0.45,
     }
-    if "api.hunyuan.cloud.tencent.com" in base_url:
-        request_body["enable_enhancement"] = True
     async with httpx.AsyncClient(timeout=90) as client:
         response = await client.post(
             f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json=request_body,
         )
-        if response.status_code == 400 and enable_vision:
-            request_body["messages"][1]["content"] = json.dumps(clean_input, ensure_ascii=False)
-            response = await client.post(
-                f"{base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json=request_body,
-            )
     response.raise_for_status()
     content = response.json()["choices"][0]["message"]["content"]
     return parse_json(content)
 
 
-def photo_metadata(photos: Any) -> list[dict[str, Any]]:
-    if not isinstance(photos, list):
-        return []
-    metadata = []
-    for index, photo in enumerate(photos[:9]):
-        if not isinstance(photo, dict):
-            continue
-        metadata.append({
-            "index": index + 1,
-            "name": str(photo.get("name", ""))[:80],
-            "width": photo.get("width"),
-            "height": photo.get("height"),
-            "orientation": photo.get("orientation", ""),
-            "brightness": photo.get("brightness", ""),
-            "scene": photo.get("scene", ""),
-            "description": photo.get("description", ""),
-            "usable_for": photo.get("usable_for", []),
-            "caption_hint": photo.get("caption_hint", ""),
-        })
-    return metadata
-
-
-async def analyze_photos_with_hunyuan(payload: ImageAnalysisRequest) -> list[dict[str, Any]]:
+async def generate_raw_json_with_hunyuan(system_prompt: str, user_input: dict[str, Any]) -> dict[str, Any]:
     api_key = os.getenv("HUNYUAN_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("未配置 HUNYUAN_API_KEY")
-
-    photos = [photo for photo in payload.photos[:9] if str(photo.get("dataUrl", "")).startswith("data:image/")]
-    if not photos:
-        return []
-
-    base_url = os.getenv("HUNYUAN_BASE_URL", HUNYUAN_BASE_URL).rstrip("/")
-    model = os.getenv("HUNYUAN_VISION_MODEL", os.getenv("HUNYUAN_MODEL", HUNYUAN_MODEL))
-    content: list[dict[str, Any]] = [{
-        "type": "text",
-        "text": (
-            "你是小红书本地生活图片编辑。请阅读用户上传的每张图片，判断图片到底拍的是什么，"
-            "适合匹配哪类文案页面。只输出 JSON："
-            '{"items":[{"index":1,"scene":"窗景/卧室/客厅/菜单/门头/团购截图/其他",'
-            '"description":"一句话描述真实画面","usable_for":["封面","环境页"],'
-            '"caption_hint":"适合压在这张图上的短句","avoid":"不要写什么"}]}。'
-            f"笔记标题：{payload.title}。店铺信息：{payload.material}"
-        )
-    }]
-    for photo in photos:
-        data_url = str(photo.get("analysisDataUrl") or photo.get("dataUrl"))
-        content.append({"type": "image_url", "image_url": {"url": data_url}})
-
-    request_body = {
-        "model": model,
-        "messages": [{"role": "user", "content": content}],
-        "temperature": 0.25,
-    }
-    async with httpx.AsyncClient(timeout=120) as client:
-        response = await client.post(
-            f"{base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json=request_body,
-        )
-    response.raise_for_status()
-    parsed = parse_json(response.json()["choices"][0]["message"]["content"])
-    items = parsed.get("items", [])
-    return items if isinstance(items, list) else []
-
-
-async def call_hunyuan_image_to_image(
-    photo: dict[str, Any],
-    plan: dict[str, Any],
-    payload: ImageFactoryRequest,
-    index: int,
-) -> str:
-    data_url = str(photo.get("dataUrl", ""))
-    image_base64 = re.sub(r"^data:image/[^;]+;base64,", "", data_url)
-    prompt = build_image_prompt(plan, payload, index)
-    body = {
-        "InputImage": image_base64,
-        "Prompt": prompt,
-        "RspImgType": "base64",
-        "Resolution": "768:1024",
-    }
-    response = await tencent_tc3_request("ImageToImage", body)
-    image = response.get("Response", {}).get("ResultImage")
-    if not image:
-        raise RuntimeError(response.get("Response", {}).get("Error", {}).get("Message", "混元生图未返回图片"))
-    return f"data:image/jpeg;base64,{image}"
-
-
-def build_image_prompt(plan: dict[str, Any], payload: ImageFactoryRequest, index: int) -> str:
-    page = str(plan.get("page") or f"第{index + 1}张")
-    title = str(plan.get("text") or payload.title)[:40]
-    note = str(plan.get("note") or payload.material)[:50]
-    material = payload.material[:80]
-    photo = payload.photos[index] if index < len(payload.photos) else {}
-    description = str(photo.get("description") or photo.get("scene") or "")
-    return (
-        "小红书本地生活真实种草笔记配图，保留商家实拍质感，真实自然，不要高端假大片。"
-        "优化曝光、色温、通透感、清晰度和构图，适合餐饮或酒旅老板发布。"
-        f"页面角色：{page}。核心卖点：{title}。补充信息：{note}。店铺信息：{material}。"
-        f"原图识别：{description}。必须尊重原图实际内容，不要把不存在的菜品、房型、设施或菜单生成进去。"
-        "画面要像小红书真实用户分享：内容真实、干净、有种草氛围、不过度商业海报化。"
-        "不要生成中文文字，不要水印，不要Logo，不要夸张滤镜，不要假豪华感。"
-    )[:900]
-
-
-async def tencent_tc3_request(action: str, body: dict[str, Any]) -> dict[str, Any]:
-    secret_id = os.getenv("TENCENTCLOUD_SECRET_ID", "").strip()
-    secret_key = os.getenv("TENCENTCLOUD_SECRET_KEY", "").strip()
-    if not secret_id or not secret_key:
-        raise RuntimeError("未配置 TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY")
-
-    service = "aiart"
-    host = "aiart.tencentcloudapi.com"
-    region = os.getenv("TENCENTCLOUD_REGION", "ap-guangzhou")
-    version = "2022-12-29"
-    payload = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
-    now = datetime.datetime.utcnow()
-    timestamp = int(now.timestamp())
-    date = now.strftime("%Y-%m-%d")
-
-    http_request_method = "POST"
-    canonical_uri = "/"
-    canonical_querystring = ""
-    canonical_headers = f"content-type:application/json; charset=utf-8\nhost:{host}\nx-tc-action:{action.lower()}\n"
-    signed_headers = "content-type;host;x-tc-action"
-    hashed_request_payload = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-    canonical_request = "\n".join([
-        http_request_method,
-        canonical_uri,
-        canonical_querystring,
-        canonical_headers,
-        signed_headers,
-        hashed_request_payload,
-    ])
-
-    algorithm = "TC3-HMAC-SHA256"
-    credential_scope = f"{date}/{service}/tc3_request"
-    hashed_canonical_request = hashlib.sha256(canonical_request.encode("utf-8")).hexdigest()
-    string_to_sign = "\n".join([algorithm, str(timestamp), credential_scope, hashed_canonical_request])
-    secret_date = hmac.new(("TC3" + secret_key).encode("utf-8"), date.encode("utf-8"), hashlib.sha256).digest()
-    secret_service = hmac.new(secret_date, service.encode("utf-8"), hashlib.sha256).digest()
-    secret_signing = hmac.new(secret_service, b"tc3_request", hashlib.sha256).digest()
-    signature = hmac.new(secret_signing, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
-    authorization = (
-        f"{algorithm} Credential={secret_id}/{credential_scope}, "
-        f"SignedHeaders={signed_headers}, Signature={signature}"
-    )
-
-    headers = {
-        "Authorization": authorization,
-        "Content-Type": "application/json; charset=utf-8",
-        "Host": host,
-        "X-TC-Action": action,
-        "X-TC-Timestamp": str(timestamp),
-        "X-TC-Version": version,
-        "X-TC-Region": region,
-    }
-    async with httpx.AsyncClient(timeout=120) as client:
-        response = await client.post(f"https://{host}", headers=headers, content=payload.encode("utf-8"))
-    response.raise_for_status()
-    return response.json()
-
-
-async def generate_raw_json_with_hunyuan(prompt: str, user_input: dict[str, Any]) -> dict[str, Any]:
-    api_key = os.getenv("HUNYUAN_API_KEY", "").strip()
-    if not api_key:
-        raise RuntimeError("未配置 HUNYUAN_API_KEY")
-
     base_url = os.getenv("HUNYUAN_BASE_URL", HUNYUAN_BASE_URL).rstrip("/")
     model = os.getenv("HUNYUAN_MODEL", HUNYUAN_MODEL)
     request_body = {
         "model": model,
         "messages": [
-            {"role": "system", "content": prompt},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(user_input, ensure_ascii=False)},
         ],
-        "temperature": 0.72,
+        "temperature": 0.35,
     }
-    if "api.hunyuan.cloud.tencent.com" in base_url:
-        request_body["enable_enhancement"] = True
     async with httpx.AsyncClient(timeout=90) as client:
         response = await client.post(
             f"{base_url}/chat/completions",
@@ -569,7 +297,8 @@ async def generate_raw_json_with_hunyuan(prompt: str, user_input: dict[str, Any]
             json=request_body,
         )
     response.raise_for_status()
-    return parse_json(response.json()["choices"][0]["message"]["content"])
+    content = response.json()["choices"][0]["message"]["content"]
+    return parse_json(content)
 
 
 def parse_json(text: str) -> dict[str, Any]:
@@ -577,41 +306,13 @@ def parse_json(text: str) -> dict[str, Any]:
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
         cleaned = re.sub(r"\s*```$", "", cleaned)
-    decoder = json.JSONDecoder()
     try:
-        parsed = json.loads(cleaned)
-        if isinstance(parsed, str):
-            return parse_json(parsed)
-        if isinstance(parsed, dict):
-            return parsed
+        return json.loads(cleaned)
     except json.JSONDecodeError:
-        pass
-    for match in re.finditer(r"\{", cleaned):
-        try:
-            parsed, _ = decoder.raw_decode(cleaned[match.start():])
-            if isinstance(parsed, str):
-                return parse_json(parsed)
-            if isinstance(parsed, dict):
-                return parsed
-        except json.JSONDecodeError:
-            continue
-    match = re.search(r'"title"\s*:', cleaned)
-    if match:
-        start = cleaned.rfind("{", 0, match.start())
-        if start >= 0:
-            try:
-                parsed, _ = decoder.raw_decode(cleaned[start:])
-                if isinstance(parsed, dict):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-    return {
-        "title": "本地生活转化型笔记",
-        "body": cleaned[:1200],
-        "tags": ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "团购套餐"],
-        "firstComment": "想看具体套餐、位置或预约方式，可以评论区问。",
-        "images": image_plan("本地生活转化型笔记"),
-    }
+        match = re.search(r"\{.*\}", cleaned, re.S)
+        if match:
+            return json.loads(match.group(0))
+        raise
 
 
 def scan_text(text: str) -> dict[str, Any]:
@@ -620,71 +321,48 @@ def scan_text(text: str) -> dict[str, Any]:
         "passed": len(hits) == 0,
         "risk_terms": hits,
         "score": max(0, 100 - len(hits) * 15),
-        "suggestions": ["删除或替换命中风险词", "避免承诺效果、官方身份或站外导流", "改成平台内评论区关键词承接"] if hits else ["未发现内置风险词", "发布前仍需人工复核事实、价格、品牌身份和案例真实性"],
+        "suggestions": ["删除命中红线", "改成站内咨询或评论区关键词"] if hits else ["可进入员工事实审核"],
     }
-
-
-def clean_generated_result(result: dict[str, Any], payload: DraftRequest) -> dict[str, Any]:
-    body = result.get("body", "")
-    if isinstance(body, (dict, list)):
-        body = ""
-    body = str(body).strip()
-    if re.search(r'"title"\s*:|"body"\s*:|"images"\s*:', body):
-        reparsed = parse_json(body)
-        if reparsed is not result and reparsed.get("body") and not isinstance(reparsed.get("body"), (dict, list)):
-            result = {**result, **reparsed}
-            body = str(result.get("body", "")).strip()
-    if not body or re.search(r'"title"\s*:|"body"\s*:|"images"\s*:', body):
-        result["body"] = fallback_draft(payload)["body"]
-    else:
-        result["body"] = body
-    return result
 
 
 def normalize_tags(tags: Any) -> list[str]:
     if not isinstance(tags, list):
-        return ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "团购套餐"]
+        return ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "团购套餐", "周末去哪儿", "到店体验", "收藏备用"]
     clean = [str(tag).strip().lstrip("#") for tag in tags if str(tag).strip()]
-    return clean[:12] or ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "团购套餐"]
+    return clean[:12] or ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "团购套餐", "周末去哪儿", "到店体验", "收藏备用"]
 
 
 def fixed_benchmark() -> dict[str, Any]:
     return {
-        "accounts": ["餐饮种草号", "酒旅攻略号", "本地生活团购转化型笔记"],
-        "notes": "后台固定，不开放给员工填写。",
-        "usage": "参考到店理由、价格锚点、真实场景图、九宫格、评论区承接；不照搬原文和图片。",
+        "accounts": ["本地生活真实体验号", "餐饮酒旅种草号"],
+        "notes": ["后台固定参考方向，不开放给员工填写。"],
+        "usage": "参考到店理由、价格锚点、真实体验、评论区承接；不照搬原文。",
     }
 
 
-def image_plan(title: str) -> list[dict[str, str]]:
-    return [
-        {"page": "封面", "text": "这里真的好舒服", "visual": "实拍图全屏封面 + 透明艺术字", "note": "姐妹们可以放心冲"},
-        {"page": "场景", "text": "氛围感拉满了", "visual": "实拍图大图展示 + 小贴纸", "note": "随手拍都很好看"},
-        {"page": "卖点", "text": "住完还想再来", "visual": "实拍图 + 手写感短字", "note": "放松感真的很强"},
-        {"page": "价格", "text": "这个价我觉得值", "visual": "实拍图 + 轻标签", "note": "提前订更稳一点"},
-        {"page": "清单", "text": "收藏这篇就够了", "visual": "实拍图 + 收藏提示", "note": "来之前看一眼"},
-    ]
+def clean_generated_result(result: dict[str, Any], payload: DraftRequest) -> dict[str, Any]:
+    title = str(result.get("title") or payload.title).strip()
+    body = str(result.get("body") or "").strip()
+    if not body or re.search(r'"title"\s*:|"body"\s*:', body):
+        body = fallback_draft(payload)["body"]
+    return {
+        **result,
+        "title": title,
+        "body": body,
+    }
 
 
 def fallback_draft(payload: DraftRequest) -> dict[str, Any]:
     body = (
-        "很多本地生活老板发小红书，第一步就走反了。\n\n"
-        "不是先追热点，也不是先把图修得很高级，更不是让 AI 生成一张看起来很假的海报。\n\n"
-        "真正要先看的，是这 3 件事：\n\n"
-        "1. 有没有明确到店理由\n"
-        "顾客看到这条笔记，要马上知道为什么今天要来、适合谁来。\n\n"
-        "2. 有没有讲清价格和规则\n"
-        "套餐包含什么、几个人用、什么时候能用、怎么预约，这些比空泛夸好吃更重要。\n\n"
-        "3. 图片够不够真实\n"
-        "店内随手拍、菜品细节、房间实拍、菜单/团购页截图，比高大上的假图更像小红书。\n\n"
-        f"{payload.material}\n\n"
-        "所以别急着发很多条。先把选题、真实图片和到店理由这三件事理顺。\n\n"
-        "想看具体套餐/位置/预约方式，可以在评论区问。"
+        "先说结论：这条选题不是为了追泛流量，而是为了让真正会到店的人看懂。\n\n"
+        "如果是本地生活商家，最重要的不是把话写得很满，而是把顾客会问的几件事说清楚：位置、价格、适合谁、为什么现在值得来。\n\n"
+        f"围绕「{payload.title}」，建议正文先讲真实场景，再讲选择理由，最后留一个站内评论承接。\n\n"
+        "发布前再核对一遍：价格是否准确、规则是否过期、有没有夸大承诺、有没有站外导流。"
     )
     return {
         "title": payload.title,
         "body": body,
-        "tags": ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "团购套餐"],
-        "firstComment": "想看具体套餐、位置或预约方式，可以评论区问。",
-        "images": image_plan(payload.title),
+        "tags": ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "周末去哪儿", "收藏备用", "团购套餐", "真实体验"],
+        "firstComment": "想看具体位置、价格或预约方式，可以评论区问。",
+        "benchmark": fixed_benchmark(),
     }
