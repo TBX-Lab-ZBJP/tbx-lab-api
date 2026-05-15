@@ -486,14 +486,14 @@
       font-family: "LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", "Microsoft YaHei UI", sans-serif;
       letter-spacing: 0;
       text-shadow: 0 3px 14px rgba(45, 30, 18, .42);
-      transform: rotate(-2deg);
+      transform: none;
     }
     .style-modern .poster-title {
       font-family: "Source Han Sans SC", "Noto Sans SC", "Alibaba PuHuiTi", "Microsoft YaHei UI", sans-serif;
       font-weight: 300;
       color: #fbf7ef;
       letter-spacing: 0;
-      transform: rotate(-1deg);
+      transform: none;
     }
     .style-modern .poster-note {
       font-family: "Source Han Sans SC", "Noto Sans SC", "Alibaba PuHuiTi", "Microsoft YaHei UI", sans-serif;
@@ -509,7 +509,7 @@
       font-family: "Source Han Serif SC", "Noto Serif SC", "LXGW WenKai", "SimSun", serif;
       font-weight: 600;
       color: #fff4df;
-      transform: rotate(-1.5deg);
+      transform: none;
     }
     .style-serif .poster-note {
       font-family: "Source Han Serif SC", "Noto Serif SC", "LXGW WenKai", "SimSun", serif;
@@ -520,7 +520,7 @@
       font-family: "Alimama DaoLiTi", "Microsoft YaHei UI", "SimHei", sans-serif;
       font-weight: 900;
       color: #fff1b8;
-      transform: rotate(-2deg);
+      transform: none;
       text-shadow: 0 4px 16px rgba(28, 22, 12, .48);
     }
     .style-boldshop .poster-note {
@@ -555,6 +555,38 @@
     .style-modern .poster-doodle,
     .style-serif .poster-doodle {
       font-family: "LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", serif;
+    }
+    .copy-edit-box {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fafafa;
+    }
+    .copy-edit-box label {
+      display: grid;
+      gap: 5px;
+      font-size: 12px;
+      color: #667085;
+      font-weight: 700;
+    }
+    .copy-edit-box input {
+      min-height: 36px;
+      padding: 8px 9px;
+      font-size: 13px;
+    }
+    .copy-adjust-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .copy-edit-box input[type="range"] {
+      width: 100%;
+      min-height: 0;
+      padding: 0;
+      accent-color: #111111;
     }
     .layout-checklist .poster-title {
       top: 92px;
@@ -1291,6 +1323,8 @@
     let uploadedPhotos = [];
     let posterStyle = "handwarm";
     let generationSeed = 0;
+    let posterCopyOverrides = {};
+    let currentSlides = [];
 
     const posterStylePresets = {
       modern: {
@@ -1357,6 +1391,57 @@
       const weight = role === "title" ? preset.titleWeight : preset.noteWeight;
       const stack = role === "title" ? preset.titleFont : preset.noteFont;
       return `${weight} ${size}px ${stack}`;
+    }
+
+    function posterLayoutDefaults(layout) {
+      const defaults = {
+        diary: { titleX: 8, titleY: 68, titleSize: 30, noteX: 8, noteY: 82, noteSize: 15 },
+        checklist: { titleX: 8, titleY: 18, titleSize: 28, noteX: 8, noteY: 36, noteSize: 15 },
+        corner: { titleX: 8, titleY: 48, titleSize: 28, noteX: 8, noteY: 66, noteSize: 15 },
+        soft: { titleX: 8, titleY: 76, titleSize: 26, noteX: 8, noteY: 86, noteSize: 15 },
+        question: { titleX: 8, titleY: 54, titleSize: 34, noteX: 8, noteY: 73, noteSize: 15 },
+        grid4: { titleX: 8, titleY: 74, titleSize: 30, noteX: 8, noteY: 86, noteSize: 15 },
+        grid9: { titleX: 8, titleY: 74, titleSize: 30, noteX: 8, noteY: 86, noteSize: 15 }
+      };
+      return defaults[layout] || defaults.diary;
+    }
+
+    function posterEditState(item, index) {
+      return {
+        ...posterLayoutDefaults(item?.layout),
+        ...(posterCopyOverrides[index] || {})
+      };
+    }
+
+    function posterTextStyle(item, index, field) {
+      const state = posterEditState(item, index);
+      const x = field === "title" ? state.titleX : state.noteX;
+      const y = field === "title" ? state.titleY : state.noteY;
+      const size = field === "title" ? state.titleSize : state.noteSize;
+      const width = Math.max(34, 92 - x);
+      return `left:${x}%;top:${y}%;right:auto;bottom:auto;width:${width}%;font-size:${size}px;`;
+    }
+
+    function setPosterCopy(index, field, value) {
+      posterCopyOverrides[index] = posterCopyOverrides[index] || {};
+      if (["titleX", "titleY", "titleSize", "noteX", "noteY", "noteSize"].includes(field)) {
+        posterCopyOverrides[index][field] = Number(value);
+      } else {
+        posterCopyOverrides[index][field] = value;
+      }
+      applyPosterCopyEdit(index);
+    }
+
+    function applyPosterCopyEdit(index) {
+      const item = currentSlides[index];
+      document.querySelectorAll(`[data-poster-title-index="${index}"]`).forEach(node => {
+        node.textContent = shortPosterTitle(item || {}, index);
+        node.setAttribute("style", posterTextStyle(item || {}, index, "title"));
+      });
+      document.querySelectorAll(`[data-poster-note-index="${index}"]`).forEach(node => {
+        node.textContent = shortPosterNote(item || {}, index);
+        node.setAttribute("style", posterTextStyle(item || {}, index, "note"));
+      });
     }
 
     async function apiPost(path, payload) {
@@ -1524,6 +1609,9 @@
       const lane = document.getElementById("lane")?.value || "";
       const title = String(latestOutput?.title || "");
       const material = document.getElementById("material")?.value || "";
+      if (Object.prototype.hasOwnProperty.call(posterCopyOverrides[index] || {}, "title")) {
+        return posterCopyOverrides[index].title;
+      }
       const text = String(item.text || "");
       if (text && text.length <= 16 && !/[：:，,。；;]/.test(text)) return text;
       const hotelLines = [
@@ -1555,6 +1643,9 @@
       const lane = document.getElementById("lane")?.value || "";
       const title = String(latestOutput?.title || "");
       const material = document.getElementById("material")?.value || "";
+      if (Object.prototype.hasOwnProperty.call(posterCopyOverrides[index] || {}, "note")) {
+        return posterCopyOverrides[index].note;
+      }
       const text = String(item.note || item.visual || "");
       if (text && text.length <= 22 && !/[：:；;]/.test(text)) return text;
       const hotelNotes = ["适合周末放空", "随手拍都好看", "晚上更有感觉", "提前订更稳", "适合两个人来", "安静又舒服"];
@@ -1580,8 +1671,8 @@
         <div class="image-preview real-photo layout-${item.layout} ${posterStyleClass()}">
           <img src="${imgSrc}" alt="${escapeHtml(photo.name || `实拍图${index + 1}`)}">
           <div class="poster-shade"></div>
-          <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
-          <div class="poster-note">${escapeHtml(shortPosterNote(item, index))}</div>
+          <div class="poster-title" data-poster-title-index="${index}" style="${posterTextStyle(item, index, "title")}">${escapeHtml(shortPosterTitle(item, index))}</div>
+          <div class="poster-note" data-poster-note-index="${index}" style="${posterTextStyle(item, index, "note")}">${escapeHtml(shortPosterNote(item, index))}</div>
           <div class="poster-doodle">${posterDoodle(index)}</div>
         </div>
       `;
@@ -1595,8 +1686,8 @@
             ${item.photoGroup.map(photo => `<img src="${photo.generatedUrl || photo.dataUrl}" alt="${escapeHtml(photo.name || "实拍图")}">`).join("")}
           </div>
           <div class="poster-shade"></div>
-          <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
-          <div class="poster-note">${escapeHtml(shortPosterNote(item, index))}</div>
+          <div class="poster-title" data-poster-title-index="${index}" style="${posterTextStyle(item, index, "title")}">${escapeHtml(shortPosterTitle(item, index))}</div>
+          <div class="poster-note" data-poster-note-index="${index}" style="${posterTextStyle(item, index, "note")}">${escapeHtml(shortPosterNote(item, index))}</div>
           <div class="poster-doodle">${posterDoodle(index)}</div>
         </div>
       `;
@@ -1717,6 +1808,7 @@
         result.images = result.images?.length ? result.images : buildImagePlan(result.title || title);
         result.compliance = result.compliance || scanText(result.body || "");
         latestOutput = result;
+        posterCopyOverrides = {};
         await generateHunyuanImages();
         renderCopy(result);
         renderImages(result.images);
@@ -1841,6 +1933,7 @@
 
     function renderImages(images) {
       const slides = getComposedSlides(images);
+      currentSlides = slides;
       const match = detectImageCopyMismatch(slides);
       document.getElementById("imageOut").innerHTML = `
         <div class="factory-note">已生成可直接发布的小红书图文成品。开启混元生图后，底图由混元处理；未开启时使用高清原图完成排版。</div>
@@ -1860,6 +1953,41 @@
           ${slides.map((item, index) => `
             <div class="image-card">
               ${posterHTML(item, index)}
+              <div class="copy-edit-box">
+                ${(() => {
+                  const edit = posterEditState(item, index);
+                  return `
+                <label>
+                  图上标题
+                  <input value="${escapeHtml(shortPosterTitle(item, index))}" maxlength="18" oninput="setPosterCopy(${index}, 'title', this.value)" placeholder="例如：住这儿太治愈了吧">
+                </label>
+                <label>
+                  图上小字
+                  <input value="${escapeHtml(shortPosterNote(item, index))}" maxlength="28" oninput="setPosterCopy(${index}, 'note', this.value)" placeholder="例如：睁眼就是浪声和光">
+                </label>
+                <div class="copy-adjust-grid">
+                  <label>标题左右
+                    <input type="range" min="0" max="55" value="${edit.titleX}" oninput="setPosterCopy(${index}, 'titleX', this.value)">
+                  </label>
+                  <label>标题上下
+                    <input type="range" min="5" max="88" value="${edit.titleY}" oninput="setPosterCopy(${index}, 'titleY', this.value)">
+                  </label>
+                  <label>标题大小
+                    <input type="range" min="18" max="42" value="${edit.titleSize}" oninput="setPosterCopy(${index}, 'titleSize', this.value)">
+                  </label>
+                  <label>小字左右
+                    <input type="range" min="0" max="60" value="${edit.noteX}" oninput="setPosterCopy(${index}, 'noteX', this.value)">
+                  </label>
+                  <label>小字上下
+                    <input type="range" min="8" max="92" value="${edit.noteY}" oninput="setPosterCopy(${index}, 'noteY', this.value)">
+                  </label>
+                  <label>小字大小
+                    <input type="range" min="11" max="24" value="${edit.noteSize}" oninput="setPosterCopy(${index}, 'noteSize', this.value)">
+                  </label>
+                </div>
+                  `;
+                })()}
+              </div>
               <div class="image-actions">
                 <button class="btn tiny ghost" onclick="downloadOneImage(${index})">下载这张 JPG</button>
               </div>
@@ -1920,11 +2048,11 @@
               ${slides.map((item, index) => `
                 <div class="xhs-slide">
                   ${item.photoGroup?.length ? collageHTML(item, index) : item.photo?.dataUrl ? `
-                    <div class="xhs-card-art has-photo">
+                    <div class="xhs-card-art has-photo ${posterStyleClass()}">
                       <img src="${item.photo.generatedUrl || item.photo.dataUrl}" alt="${escapeHtml(item.photo.name || `实拍图${index + 1}`)}">
                       <div class="poster-shade"></div>
-                      <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
-                      <div class="poster-note">${escapeHtml(shortPosterNote(item, index))}</div>
+                      <div class="poster-title" data-poster-title-index="${index}" style="${posterTextStyle(item, index, "title")}">${escapeHtml(shortPosterTitle(item, index))}</div>
+                      <div class="poster-note" data-poster-note-index="${index}" style="${posterTextStyle(item, index, "note")}">${escapeHtml(shortPosterNote(item, index))}</div>
                       <div class="poster-doodle">${posterDoodle(index)}</div>
                     </div>
                   ` : `
@@ -2070,30 +2198,23 @@
           ctx.shadowColor = "rgba(0,0,0,.52)";
           ctx.shadowBlur = 10;
           ctx.shadowOffsetY = 3;
-          const titlePos = {
-            diary: [58, 840, 780, 66, 58],
-            checklist: [58, 170, 620, 62, 52],
-            corner: [58, 560, 620, 62, 52],
-            soft: [58, 900, 780, 58, 48],
-            question: [58, 640, 680, 70, 62]
-          }[layout] || [58, 840, 780, 66, 58];
-          drawWrappedText(ctx, shortPosterTitle(item, index), titlePos[0], titlePos[1], titlePos[2], titlePos[3], canvasTextFont("title", titlePos[4]), 3);
+          const edit = posterEditState(item, index);
+          const titleSize = Math.round(edit.titleSize * 1.9);
+          const titleX = Math.round(canvas.width * edit.titleX / 100);
+          const titleY = Math.round(canvas.height * edit.titleY / 100);
+          const titleWidth = Math.round(canvas.width * Math.max(34, 92 - edit.titleX) / 100);
+          drawWrappedText(ctx, shortPosterTitle(item, index), titleX, titleY, titleWidth, Math.round(titleSize * 1.14), canvasTextFont("title", titleSize), 3);
           ctx.shadowColor = "transparent";
 
           ctx.fillStyle = stylePreset.noteInk;
           ctx.shadowColor = "rgba(0,0,0,.45)";
           ctx.shadowBlur = 8;
           ctx.shadowOffsetY = 2;
-          const notePos = {
-            diary: [58, 1012, 760],
-            checklist: [58, 304, 620],
-            corner: [58, 694, 620],
-            soft: [58, 1010, 760],
-            question: [58, 796, 680]
-          }[layout] || [58, 1012, 760];
-          if (layout !== "soft") {
-            drawWrappedText(ctx, shortPosterNote(item, index), notePos[0], notePos[1], notePos[2], 36, canvasTextFont("note", 28), 2);
-          }
+          const noteSize = Math.round(edit.noteSize * 1.9);
+          const noteX = Math.round(canvas.width * edit.noteX / 100);
+          const noteY = Math.round(canvas.height * edit.noteY / 100);
+          const noteWidth = Math.round(canvas.width * Math.max(34, 92 - edit.noteX) / 100);
+          drawWrappedText(ctx, shortPosterNote(item, index), noteX, noteY, noteWidth, Math.round(noteSize * 1.25), canvasTextFont("note", noteSize), 2);
           ctx.shadowColor = "transparent";
 
           drawLightDoodle(ctx, index, 62, 1110);
@@ -2209,10 +2330,19 @@
       ctx.shadowColor = "rgba(0,0,0,.52)";
       ctx.shadowBlur = 10;
       ctx.shadowOffsetY = 3;
-      drawWrappedText(ctx, shortPosterTitle(item, index), 58, 890, 780, 64, canvasTextFont("title", 58), 2);
+      const edit = posterEditState(item, index);
+      const titleSize = Math.round(edit.titleSize * 1.9);
+      const titleX = Math.round(width * edit.titleX / 100);
+      const titleY = Math.round(height * edit.titleY / 100);
+      const titleWidth = Math.round(width * Math.max(34, 92 - edit.titleX) / 100);
+      drawWrappedText(ctx, shortPosterTitle(item, index), titleX, titleY, titleWidth, Math.round(titleSize * 1.14), canvasTextFont("title", titleSize), 2);
       ctx.shadowColor = "transparent";
       ctx.fillStyle = stylePreset.noteInk;
-      drawWrappedText(ctx, shortPosterNote(item, index), 58, 1038, 760, 36, canvasTextFont("note", 30), 2);
+      const noteSize = Math.round(edit.noteSize * 1.9);
+      const noteX = Math.round(width * edit.noteX / 100);
+      const noteY = Math.round(height * edit.noteY / 100);
+      const noteWidth = Math.round(width * Math.max(34, 92 - edit.noteX) / 100);
+      drawWrappedText(ctx, shortPosterNote(item, index), noteX, noteY, noteWidth, Math.round(noteSize * 1.25), canvasTextFont("note", noteSize), 2);
       drawLightDoodle(ctx, index, 62, 1110);
     }
 
