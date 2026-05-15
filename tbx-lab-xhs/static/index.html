@@ -94,7 +94,7 @@
       font-size: 14px;
       line-height: 1.7;
     }
-    .badge {
+    .count-badge {
       display: inline-flex;
       align-items: center;
       border-radius: 999px;
@@ -321,8 +321,8 @@
             <label class="field">
               <span>业务赛道</span>
               <select id="lane" onchange="syncTopicPrompts()">
-                <option>餐饮</option>
-                <option>酒旅</option>
+                <option value="餐饮">餐饮</option>
+                <option value="酒旅">酒旅</option>
               </select>
             </label>
             <label class="field">
@@ -338,7 +338,7 @@
           <div class="actions">
             <button class="btn" onclick="collectHotTitles()">一次性采集 30 个爆款参考标题</button>
             <button class="btn ghost" onclick="clearSelection()">清空勾选</button>
-            <span class="badge" id="approvedCount">已选 0 个</span>
+            <span class="count-badge" id="approvedCount">已选 0 个</span>
           </div>
         </div>
 
