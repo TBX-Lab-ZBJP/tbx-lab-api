@@ -38,6 +38,29 @@ RED_LINES = [
     "2980",
 ]
 
+REFERENCE_TOPICS = {
+    "酒旅": [
+        {"title": "威海这家海景房，窗边坐一下午都不想走", "style": "真实体验日记", "direction": "窗景 · 氛围"},
+        {"title": "七夕住这里也太会了吧，晚上看海好舒服", "style": "情侣出行", "direction": "节日 · 预约"},
+        {"title": "来威海前先看这篇，民宿真的别乱订", "style": "避坑提醒", "direction": "差评避坑"},
+        {"title": "这间房最戳我的不是海景，是晚上真的很安静", "style": "细节体验", "direction": "睡眠体验"},
+        {"title": "周末想放空的话，这种房间真的很适合", "style": "收藏清单", "direction": "周末 · 放松"},
+        {"title": "带爸妈来威海，我会优先看这几个点", "style": "亲子家庭", "direction": "适合人群"},
+        {"title": "同样看海，为什么有些房间住起来更舒服", "style": "对比选择", "direction": "房型对比"},
+        {"title": "第一次来这边，位置比装修更重要", "style": "路线攻略", "direction": "位置 · 交通"},
+    ],
+    "餐饮": [
+        {"title": "这家真的可以二刷，招牌菜闭眼点", "style": "真实体验日记", "direction": "招牌菜"},
+        {"title": "姐妹们这家我先替你们吃了，真的香", "style": "种草分享", "direction": "菜品种草"},
+        {"title": "人均不高但吃得很满足，适合周末约饭", "style": "性价比", "direction": "客单价"},
+        {"title": "第一次来别乱点，这几个更稳", "style": "点单攻略", "direction": "隐藏菜单"},
+        {"title": "这家排队前先看一眼，少踩坑", "style": "避坑提醒", "direction": "排队 · 规则"},
+        {"title": "适合朋友小聚的一家，氛围比想象中舒服", "style": "场景推荐", "direction": "聚餐"},
+        {"title": "这口热乎的真的很治愈，下次还来", "style": "情绪种草", "direction": "口味体验"},
+        {"title": "同价位怎么选，我会优先看这几样", "style": "对比选择", "direction": "套餐对比"},
+    ],
+}
+
 app = FastAPI(title="TBX Lab XHS Publisher", version="1.0.0")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -136,15 +159,17 @@ async def hot_titles(payload: HotTitleRequest) -> dict[str, Any]:
 async def generate_hot_titles_with_hunyuan(payload: HotTitleRequest) -> dict[str, Any]:
     lane = payload.lane.strip() if payload.lane.strip() in {"餐饮", "酒旅"} else "餐饮"
     keyword = payload.keyword.strip() or ("新品种草 客单价对比 隐藏菜单" if lane == "餐饮" else "周末亲子房 海边民宿 节日套餐")
+    reference_pool = REFERENCE_TOPICS[lane]
     prompt = """
 你是本地生活小红书转化型选题策划。
 目标用户是餐饮/酒旅老板，目标不是泛流量，而是让顾客收藏、咨询、团购点击、预约、核销、到店。
 
-请基于用户输入的行业、关键词，生成 30 个“小红书本地生活转化型选题”。
+请基于用户输入的行业、关键词，以及提供的真实感参考结构，生成 30 个“小红书本地生活转化型参考选题”。
+注意：这不是实时抓取小红书热门榜，不要声称“全网热门”或“真实爆款数据”。你是在参考池基础上做二次改写。
 必须输出严格 JSON：
 {
   "items": [
-    {"id":"hot_1","title":"...","platform":"小红书","heat":88,"direction":"新品种草 · 季节"}
+    {"id":"hot_1","title":"...","platform":"小红书","heat":88,"direction":"新品种草 · 季节","source_style":"真实体验日记","image_need":["窗景","卧室"]}
   ]
 }
 
@@ -156,6 +181,7 @@ async def generate_hot_titles_with_hunyuan(payload: HotTitleRequest) -> dict[str
         "lane": lane,
         "keyword": keyword,
         "platform": payload.platform,
+        "reference_pool": reference_pool,
     })
     items = result.get("items", [])
     if not isinstance(items, list) or not items:
@@ -168,38 +194,36 @@ async def generate_hot_titles_with_hunyuan(payload: HotTitleRequest) -> dict[str
             "platform": str(item.get("platform") or "小红书"),
             "heat": int(item.get("heat") or (88 - index % 18)),
             "direction": str(item.get("direction") or "到店理由"),
+            "source_style": str(item.get("source_style") or item.get("style") or reference_pool[index % len(reference_pool)]["style"]),
+            "image_need": item.get("image_need") if isinstance(item.get("image_need"), list) else [],
             "keyword": keyword,
         })
     return {"count": len(normalized), "items": normalized}
 
 
 def fallback_hot_titles(payload: HotTitleRequest) -> dict[str, Any]:
-    seeds = [
-        "本周建议发新品种草，先把到店理由讲清楚",
-        "客单价对比这样写，更容易让顾客觉得值",
-        "隐藏菜单不要只说好吃，要说适合谁点",
-        "周末到店前，顾客最关心这几个问题",
-        "节日套餐别只发价格，要发使用场景",
-        "团购券核销少，可能是笔记没讲清规则",
-        "一张烂图这样加标注，也能变成种草图",
-        "同样的菜品图，为什么别人更容易被收藏",
-        "店内随手拍怎么排成九宫格更像真人推荐",
-        "差评高发问题提前讲清，反而更容易成交",
-    ]
-    directions = ["新品种草", "客单价对比", "隐藏菜单", "节日节点", "到店理由", "差评避坑"]
-    platforms = [payload.platform or "小红书", "抖音"]
     lane = payload.lane.strip() if payload.lane.strip() in {"餐饮", "酒旅"} else "餐饮"
+    pool = REFERENCE_TOPICS[lane]
+    modifiers = ["周末版", "七夕版", "避坑版", "收藏版", "第一次来版", "适合朋友版", "性价比版", "真实体验版"]
+    platforms = [payload.platform or "小红书", "抖音"]
     keyword = payload.keyword.strip() or ("新品种草 客单价对比 隐藏菜单" if lane == "餐饮" else "周末亲子房 海边民宿 节日套餐")
     items = []
     for index in range(30):
-        dimension = ["地域", "品类", "季节", "节日", "平台趋势"][index % 5]
-        title = f"{lane}{keyword.split()[0] if keyword.split() else ''}：{seeds[index % len(seeds)]}"
+        base = pool[index % len(pool)]
+        modifier = modifiers[index % len(modifiers)]
+        title = base["title"]
+        if keyword and index % 3 == 0:
+            title = f"{keyword.split()[0]}｜{title}"
+        if index >= len(pool):
+            title = f"{title}（{modifier}）"
         items.append({
             "id": f"hot_{index + 1}",
             "title": title,
             "platform": platforms[index % len(platforms)],
             "heat": 72 + ((index * 7) % 27),
-            "direction": f"{directions[index % len(directions)]} · {dimension}",
+            "direction": base["direction"],
+            "source_style": base["style"],
+            "image_need": ["窗景", "卧室"] if lane == "酒旅" else ["菜品", "菜单"],
             "keyword": keyword,
         })
     return {"count": len(items), "items": items}

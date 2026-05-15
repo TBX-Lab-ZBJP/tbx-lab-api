@@ -563,6 +563,28 @@
       bottom: auto;
       max-width: 76%;
     }
+    .collage-poster {
+      padding: 10px;
+      background: #ffffff;
+    }
+    .collage-poster .poster-shade {
+      background: linear-gradient(180deg, rgba(0,0,0,0) 40%, rgba(0,0,0,.58) 100%);
+    }
+    .collage-grid {
+      position: absolute;
+      inset: 10px;
+      display: grid;
+      gap: 6px;
+      z-index: 1;
+    }
+    .collage-grid img {
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      object-fit: cover;
+      border-radius: 10px;
+      filter: brightness(1.08) contrast(1.05) saturate(1.08);
+    }
     .image-actions {
       display: flex;
       gap: 8px;
@@ -661,6 +683,42 @@
       border-radius: 8px;
       border: 1px solid #e5e7eb;
       background: #fff;
+    }
+    .photo-chip {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #ffffff;
+    }
+    .photo-chip img {
+      border: 0;
+      border-radius: 0;
+    }
+    .photo-chip-meta {
+      padding: 6px 7px;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #475467;
+      min-height: 44px;
+    }
+    .factory-progress {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .factory-step {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #f8fafc;
+      font-size: 13px;
+      font-weight: 800;
+      color: #475467;
+    }
+    .factory-step.active {
+      border-color: #3157ff;
+      background: #eef2ff;
+      color: #243bce;
     }
     .xhs-phone {
       width: min(430px, 100%);
@@ -987,7 +1045,7 @@
 
       <section id="collect">
         <div class="card">
-          <h2>采集设置</h2>
+          <h2>参考选题设置</h2>
           <div class="collect-form">
             <div class="collect-platform-stack">
               <label class="field">
@@ -999,7 +1057,7 @@
                 </select>
               </label>
               <div class="collect-button-row">
-                <button class="btn" onclick="collectHotTitles()">一次性采集30个标题</button>
+                <button class="btn" onclick="collectHotTitles()">生成30个参考选题</button>
                 <button class="btn ghost" onclick="clearSelection()">清空勾选</button>
               </div>
             </div>
@@ -1036,17 +1094,17 @@
         </div>
 
         <div class="card" style="margin-top:16px">
-          <h2>候选热点标题</h2>
+          <h2>候选参考选题</h2>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
                   <th style="width:52px">选择</th>
                   <th style="width:56px">序号</th>
-                  <th>热点标题</th>
+                  <th>参考选题</th>
                   <th style="width:90px">平台</th>
-                  <th style="width:80px">热度</th>
-                  <th style="width:130px">建议方向</th>
+                  <th style="width:80px">参考分</th>
+                  <th style="width:130px">参考结构</th>
                 </tr>
               </thead>
               <tbody id="hotRows">
@@ -1215,8 +1273,18 @@
           console.warn("图片处理失败", error);
         }
       }
-      document.getElementById("photoPreview").innerHTML = uploadedPhotos.map(photo => `
-        <img src="${photo.dataUrl}" alt="${escapeHtml(photo.name)}">
+      renderPhotoPreview();
+    }
+
+    function renderPhotoPreview() {
+      document.getElementById("photoPreview").innerHTML = uploadedPhotos.map((photo, index) => `
+        <div class="photo-chip">
+          <img src="${photo.dataUrl}" alt="${escapeHtml(photo.name)}">
+          <div class="photo-chip-meta">
+            ${index + 1}. ${escapeHtml(photo.scene || photo.orientation || "待识别")}<br>
+            ${escapeHtml(photo.caption_hint || photo.brightness || "")}
+          </div>
+        </div>
       `).join("");
     }
 
@@ -1297,7 +1365,7 @@
     function getComposedSlides(images) {
       const plans = images?.length ? images : buildImagePlan(latestOutput?.title || "本地生活爆款图文");
       const count = uploadedPhotos.length ? Math.max(uploadedPhotos.length, plans.length) : plans.length;
-      return Array.from({ length: count }, (_, index) => {
+      const slides = Array.from({ length: count }, (_, index) => {
         const plan = plans[index % plans.length];
         const mappedIndex = Number(plan.photo_index || plan.photoIndex || 0) - 1;
         const photo = uploadedPhotos.length
@@ -1305,6 +1373,17 @@
           : null;
         return { ...plan, photo, index, layout: pickLayout(index, plan) };
       });
+      if (uploadedPhotos.length >= 4) {
+        slides.push({
+          page: uploadedPhotos.length >= 9 ? "九宫格" : "四宫格",
+          text: "收藏这一组",
+          note: uploadedPhotos.length >= 9 ? "一组看完更有感觉" : "几个重点都在这",
+          photoGroup: uploadedPhotos.slice(0, uploadedPhotos.length >= 9 ? 9 : 4),
+          index: slides.length,
+          layout: uploadedPhotos.length >= 9 ? "grid9" : "grid4",
+        });
+      }
+      return slides;
     }
 
     function pickLayout(index, item = {}) {
@@ -1382,6 +1461,7 @@
     }
 
     function posterHTML(item, index) {
+      if (item.photoGroup?.length) return collageHTML(item, index);
       const photo = item.photo;
       if (!photo?.dataUrl) {
         return `<div class="image-preview">${escapeHtml(item.text)}</div>`;
@@ -1403,6 +1483,24 @@
             ${tags.map(tag => `<span class="poster-tag">${escapeHtml(tag)}</span>`).join("")}
           </div>
           <div class="poster-sticker">${index === 0 ? "先看这篇" : (item.layout === "question" ? "怎么选" : "建议收藏")}</div>
+        </div>
+      `;
+    }
+
+    function collageHTML(item, index) {
+      const cols = item.layout === "grid9" ? 3 : 2;
+      return `
+        <div class="image-preview real-photo collage-poster">
+          <div class="collage-grid" style="grid-template-columns: repeat(${cols}, 1fr)">
+            ${item.photoGroup.map(photo => `<img src="${photo.generatedUrl || photo.dataUrl}" alt="${escapeHtml(photo.name || "实拍图")}">`).join("")}
+          </div>
+          <div class="poster-shade"></div>
+          <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
+          <div class="poster-note">${escapeHtml(shortPosterNote(item, index))}</div>
+          <div class="poster-tags">
+            <span class="poster-tag">一组看完</span>
+            <span class="poster-tag">收藏备用</span>
+          </div>
         </div>
       `;
     }
@@ -1558,6 +1656,7 @@
             });
           }
         });
+        renderPhotoPreview();
       } catch (error) {
         console.warn("混元图片识别失败，将使用图片基础信息生成", error);
       }
@@ -1644,8 +1743,18 @@
 
     function renderImages(images) {
       const slides = getComposedSlides(images);
+      const match = detectImageCopyMismatch(slides);
       document.getElementById("imageOut").innerHTML = `
         <div class="factory-note">已生成可直接发布的小红书图文成品。开启混元生图后，底图由混元处理；未开启时使用高清原图完成排版。</div>
+        ${match.issues.length ? `
+          <div class="factory-note" style="background:#fff7ed;border-color:#fdba74;color:#9a3412">
+            图文匹配提醒：${match.issues.map(escapeHtml).join("；")}
+          </div>
+        ` : `
+          <div class="factory-note" style="background:#f0fdf4;border-color:#86efac;color:#166534">
+            图文匹配初检通过：图片类型和图上短句基本一致，发布前仍需人工确认价格和事实。
+          </div>
+        `}
         <div class="actions" style="margin:12px 0">
           <button class="btn secondary" onclick="downloadImageJpgs()">下载全部成品图 JPG</button>
         </div>
@@ -1660,6 +1769,28 @@
           `).join("")}
         </div>
       `;
+    }
+
+    function detectImageCopyMismatch(slides) {
+      const issues = [];
+      slides.forEach((item, index) => {
+        if (!item.photo || item.photoGroup?.length) return;
+        const scene = String(item.photo.scene || item.photo.description || "");
+        const text = `${item.page || ""}${item.text || ""}${item.note || ""}`;
+        if (/窗景|海景/.test(text) && scene && !/窗|海|景|阳台|室外/.test(scene)) {
+          issues.push(`第${index + 1}张写了景观，但图片识别为「${scene}」`);
+        }
+        if (/卧室|床|睡|房型/.test(text) && scene && !/卧室|床|房间|房型/.test(scene)) {
+          issues.push(`第${index + 1}张写了房间，但图片识别为「${scene}」`);
+        }
+        if (/菜单|价格|套餐|团购|预约/.test(text) && scene && !/菜单|团购|截图|价格|二维码|文字/.test(scene)) {
+          issues.push(`第${index + 1}张写了价格/预约，但图片识别为「${scene}」`);
+        }
+        if (/好吃|香|菜|吃/.test(text) && scene && !/菜|餐|食物|饮品|桌/.test(scene)) {
+          issues.push(`第${index + 1}张写了餐饮，但图片识别为「${scene}」`);
+        }
+      });
+      return { passed: issues.length === 0, issues: issues.slice(0, 3) };
     }
 
     function renderPublishPreview() {
@@ -1690,7 +1821,7 @@
             <div class="xhs-track" id="xhsTrack">
               ${slides.map((item, index) => `
                 <div class="xhs-slide">
-                  ${item.photo?.dataUrl ? `
+                  ${item.photoGroup?.length ? collageHTML(item, index) : item.photo?.dataUrl ? `
                     <div class="xhs-card-art has-photo">
                       <img src="${item.photo.generatedUrl || item.photo.dataUrl}" alt="${escapeHtml(item.photo.name || `实拍图${index + 1}`)}">
                       <div class="poster-shade"></div>
@@ -1826,6 +1957,11 @@
           { bg: "#eef6ff", ink: "#11294a", accent: "#2563eb" }
         ];
         const palette = palettes[index % palettes.length];
+
+        if (item.photoGroup?.length) {
+          await drawCollagePoster(ctx, item, index, canvas.width, canvas.height);
+          return canvas.toBlob(blob => resolve(blob), "image/jpeg", 0.94);
+        }
 
         if (item.photo?.dataUrl) {
           const layout = item.layout || "diary";
@@ -1993,6 +2129,41 @@
       ctx.filter = "none";
       ctx.fillStyle = "rgba(255,255,255,.06)";
       ctx.fillRect(x, y, width, height);
+    }
+
+    async function drawCollagePoster(ctx, item, index, width, height) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+      const photos = item.photoGroup || [];
+      const cols = item.layout === "grid9" ? 3 : 2;
+      const rows = Math.ceil(photos.length / cols);
+      const gap = 12;
+      const pad = 34;
+      const cellW = (width - pad * 2 - gap * (cols - 1)) / cols;
+      const cellH = (height - pad * 2 - gap * (rows - 1)) / rows;
+      for (let i = 0; i < photos.length; i++) {
+        const img = await loadCanvasImage(photos[i].generatedUrl || photos[i].dataUrl);
+        const x = pad + (i % cols) * (cellW + gap);
+        const y = pad + Math.floor(i / cols) * (cellH + gap);
+        ctx.save();
+        roundRect(ctx, x, y, cellW, cellH, 18);
+        ctx.clip();
+        drawCoverImage(ctx, img, x, y, cellW, cellH);
+        ctx.restore();
+      }
+      const gradient = ctx.createLinearGradient(0, height * .45, 0, height);
+      gradient.addColorStop(0, "rgba(0,0,0,0)");
+      gradient.addColorStop(1, "rgba(0,0,0,.66)");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = "#ffffff";
+      ctx.shadowColor = "rgba(0,0,0,.52)";
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 3;
+      drawWrappedText(ctx, shortPosterTitle(item, index), 58, 890, 780, 64, "900 58px Microsoft YaHei UI, Microsoft YaHei, sans-serif", 2);
+      ctx.shadowColor = "transparent";
+      ctx.fillStyle = "rgba(255,255,255,.94)";
+      drawWrappedText(ctx, shortPosterNote(item, index), 58, 1038, 760, 36, "700 30px Microsoft YaHei, sans-serif", 2);
     }
 
     function drawWrappedText(ctx, text, x, y, maxWidth, lineHeight, font, maxLines = 99) {
