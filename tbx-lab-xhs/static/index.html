@@ -487,6 +487,7 @@
       letter-spacing: 0;
       text-shadow: 0 3px 14px rgba(45, 30, 18, .42);
       transform: none;
+      cursor: grab;
     }
     .style-modern .poster-title {
       font-family: "Source Han Sans SC", "Noto Sans SC", "Alibaba PuHuiTi", "Microsoft YaHei UI", sans-serif;
@@ -542,6 +543,21 @@
       font-weight: 500;
       font-family: "LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", "Microsoft YaHei UI", sans-serif;
       text-shadow: 0 2px 10px rgba(45, 30, 18, .38);
+      cursor: grab;
+    }
+    .poster-editable.is-selected {
+      outline: 2px dashed rgba(255, 255, 255, .92);
+      outline-offset: 6px;
+      resize: both;
+      overflow: auto;
+      min-width: 96px;
+      min-height: 34px;
+      background: rgba(0, 0, 0, .08);
+      border-radius: 6px;
+    }
+    .poster-editable:focus {
+      outline: 2px solid rgba(255, 255, 255, .96);
+      outline-offset: 6px;
     }
     .poster-doodle {
       width: fit-content;
@@ -587,6 +603,30 @@
       min-height: 0;
       padding: 0;
       accent-color: #111111;
+    }
+    .factory-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin: 12px 0;
+      padding: 10px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fafafa;
+    }
+    .color-palette {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .color-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      border: 2px solid #ffffff;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, .18);
+      cursor: pointer;
     }
     .layout-checklist .poster-title {
       top: 92px;
@@ -1325,6 +1365,9 @@
     let generationSeed = 0;
     let posterCopyOverrides = {};
     let currentSlides = [];
+    let posterGlobalColor = "";
+    let selectedPosterText = null;
+    let posterDragState = null;
 
     const posterStylePresets = {
       modern: {
@@ -1419,7 +1462,8 @@
       const y = field === "title" ? state.titleY : state.noteY;
       const size = field === "title" ? state.titleSize : state.noteSize;
       const width = Math.max(34, 92 - x);
-      return `left:${x}%;top:${y}%;right:auto;bottom:auto;width:${width}%;font-size:${size}px;`;
+      const color = posterGlobalColor ? `color:${posterGlobalColor};` : "";
+      return `left:${x}%;top:${y}%;right:auto;bottom:auto;width:${width}%;font-size:${size}px;${color}`;
     }
 
     function setPosterCopy(index, field, value) {
@@ -1432,6 +1476,11 @@
       applyPosterCopyEdit(index);
     }
 
+    function setPosterColor(color) {
+      posterGlobalColor = color || "";
+      currentSlides.forEach((_, index) => applyPosterCopyEdit(index));
+    }
+
     function applyPosterCopyEdit(index) {
       const item = currentSlides[index];
       document.querySelectorAll(`[data-poster-title-index="${index}"]`).forEach(node => {
@@ -1442,6 +1491,74 @@
         node.textContent = shortPosterNote(item || {}, index);
         node.setAttribute("style", posterTextStyle(item || {}, index, "note"));
       });
+    }
+
+    function selectPosterText(event, index, field) {
+      event.stopPropagation();
+      document.querySelectorAll(".poster-editable.is-selected").forEach(node => node.classList.remove("is-selected"));
+      event.currentTarget.classList.add("is-selected");
+      selectedPosterText = { index, field, node: event.currentTarget };
+    }
+
+    function updatePosterTextFromNode(index, field, node) {
+      posterCopyOverrides[index] = posterCopyOverrides[index] || {};
+      posterCopyOverrides[index][field] = node.textContent.trim();
+      const attr = field === "title" ? "data-poster-title-index" : "data-poster-note-index";
+      document.querySelectorAll(`[${attr}="${index}"]`).forEach(other => {
+        if (other === node) return;
+        other.textContent = field === "title" ? shortPosterTitle(currentSlides[index] || {}, index) : shortPosterNote(currentSlides[index] || {}, index);
+        other.setAttribute("style", posterTextStyle(currentSlides[index] || {}, index, field));
+      });
+    }
+
+    function beginPosterDrag(event, index, field) {
+      selectPosterText(event, index, field);
+      if (event.target !== event.currentTarget) return;
+      const parent = event.currentTarget.closest(".image-preview, .xhs-card-art");
+      if (!parent) return;
+      const item = currentSlides[index] || {};
+      const state = posterEditState(item, index);
+      const rect = parent.getBoundingClientRect();
+      const nodeRect = event.currentTarget.getBoundingClientRect();
+      posterDragState = {
+        index,
+        field,
+        rect,
+        startX: event.clientX,
+        startY: event.clientY,
+        x: field === "title" ? state.titleX : state.noteX,
+        y: field === "title" ? state.titleY : state.noteY,
+        w: nodeRect.width,
+        h: nodeRect.height
+      };
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+    }
+
+    function movePosterDrag(event) {
+      if (!posterDragState) return;
+      const dx = (event.clientX - posterDragState.startX) / posterDragState.rect.width * 100;
+      const dy = (event.clientY - posterDragState.startY) / posterDragState.rect.height * 100;
+      const prefix = posterDragState.field === "title" ? "title" : "note";
+      setPosterCopy(posterDragState.index, `${prefix}X`, Math.max(0, Math.min(65, posterDragState.x + dx)).toFixed(1));
+      setPosterCopy(posterDragState.index, `${prefix}Y`, Math.max(4, Math.min(94, posterDragState.y + dy)).toFixed(1));
+    }
+
+    function endPosterDrag(event, index, field) {
+      const node = event.currentTarget;
+      const parent = node.closest(".image-preview, .xhs-card-art");
+      if (parent) {
+        const parentRect = parent.getBoundingClientRect();
+        const nodeRect = node.getBoundingClientRect();
+        const widthPct = nodeRect.width / parentRect.width * 100;
+        const defaultWidth = Math.max(34, 92 - (field === "title" ? posterEditState(currentSlides[index] || {}, index).titleX : posterEditState(currentSlides[index] || {}, index).noteX));
+        if (Math.abs(widthPct - defaultWidth) > 3) {
+          const size = field === "title" ? "titleSize" : "noteSize";
+          const currentSize = field === "title" ? posterEditState(currentSlides[index] || {}, index).titleSize : posterEditState(currentSlides[index] || {}, index).noteSize;
+          const scale = Math.max(.75, Math.min(1.45, widthPct / defaultWidth));
+          setPosterCopy(index, size, Math.round(currentSize * scale));
+        }
+      }
+      posterDragState = null;
     }
 
     async function apiPost(path, payload) {
@@ -1671,8 +1788,8 @@
         <div class="image-preview real-photo layout-${item.layout} ${posterStyleClass()}">
           <img src="${imgSrc}" alt="${escapeHtml(photo.name || `实拍图${index + 1}`)}">
           <div class="poster-shade"></div>
-          <div class="poster-title" data-poster-title-index="${index}" style="${posterTextStyle(item, index, "title")}">${escapeHtml(shortPosterTitle(item, index))}</div>
-          <div class="poster-note" data-poster-note-index="${index}" style="${posterTextStyle(item, index, "note")}">${escapeHtml(shortPosterNote(item, index))}</div>
+          <div class="poster-title poster-editable" contenteditable="true" data-poster-title-index="${index}" style="${posterTextStyle(item, index, "title")}" onclick="selectPosterText(event, ${index}, 'title')" oninput="updatePosterTextFromNode(${index}, 'title', this)" onpointerdown="beginPosterDrag(event, ${index}, 'title')" onpointermove="movePosterDrag(event)" onpointerup="endPosterDrag(event, ${index}, 'title')">${escapeHtml(shortPosterTitle(item, index))}</div>
+          <div class="poster-note poster-editable" contenteditable="true" data-poster-note-index="${index}" style="${posterTextStyle(item, index, "note")}" onclick="selectPosterText(event, ${index}, 'note')" oninput="updatePosterTextFromNode(${index}, 'note', this)" onpointerdown="beginPosterDrag(event, ${index}, 'note')" onpointermove="movePosterDrag(event)" onpointerup="endPosterDrag(event, ${index}, 'note')">${escapeHtml(shortPosterNote(item, index))}</div>
           <div class="poster-doodle">${posterDoodle(index)}</div>
         </div>
       `;
@@ -1686,8 +1803,8 @@
             ${item.photoGroup.map(photo => `<img src="${photo.generatedUrl || photo.dataUrl}" alt="${escapeHtml(photo.name || "实拍图")}">`).join("")}
           </div>
           <div class="poster-shade"></div>
-          <div class="poster-title" data-poster-title-index="${index}" style="${posterTextStyle(item, index, "title")}">${escapeHtml(shortPosterTitle(item, index))}</div>
-          <div class="poster-note" data-poster-note-index="${index}" style="${posterTextStyle(item, index, "note")}">${escapeHtml(shortPosterNote(item, index))}</div>
+          <div class="poster-title poster-editable" contenteditable="true" data-poster-title-index="${index}" style="${posterTextStyle(item, index, "title")}" onclick="selectPosterText(event, ${index}, 'title')" oninput="updatePosterTextFromNode(${index}, 'title', this)" onpointerdown="beginPosterDrag(event, ${index}, 'title')" onpointermove="movePosterDrag(event)" onpointerup="endPosterDrag(event, ${index}, 'title')">${escapeHtml(shortPosterTitle(item, index))}</div>
+          <div class="poster-note poster-editable" contenteditable="true" data-poster-note-index="${index}" style="${posterTextStyle(item, index, "note")}" onclick="selectPosterText(event, ${index}, 'note')" oninput="updatePosterTextFromNode(${index}, 'note', this)" onpointerdown="beginPosterDrag(event, ${index}, 'note')" onpointermove="movePosterDrag(event)" onpointerup="endPosterDrag(event, ${index}, 'note')">${escapeHtml(shortPosterNote(item, index))}</div>
           <div class="poster-doodle">${posterDoodle(index)}</div>
         </div>
       `;
@@ -1697,7 +1814,14 @@
       document.querySelectorAll("main section").forEach(s => s.classList.add("hidden"));
       document.getElementById(id).classList.remove("hidden");
       document.querySelectorAll(".nav button").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
+      if (btn) btn.classList.add("active");
+    }
+
+    function goStep(id) {
+      const buttons = Array.from(document.querySelectorAll(".nav button"));
+      const map = { collect: 0, write: 1, scan: 2, review: 3 };
+      show(id, buttons[map[id]]);
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }
 
     function scanText(text) {
@@ -1762,10 +1886,14 @@
     function approveTitles() {
       const checkedIds = Array.from(document.querySelectorAll(".hotCheck:checked")).map(el => el.value);
       approvedTitles = hotTitles.filter(item => checkedIds.includes(item.id));
+      if (!approvedTitles.length) {
+        alert("请先勾选至少 1 个选题");
+        return;
+      }
       const select = document.getElementById("titleSelect");
       select.innerHTML = approvedTitles.map(item => `<option>${item.title}</option>`).join("");
       document.getElementById("approvedCount").textContent = `已入池 ${approvedTitles.length} 个`;
-      alert(`已选择 ${approvedTitles.length} 个标题进入生产池`);
+      goStep("write");
     }
 
     function showOutput(type) {
@@ -1814,6 +1942,7 @@
         renderImages(result.images);
         document.getElementById("scanText").value = result.body || "";
         showOutput(outputType.includes("图片工厂") ? "images" : "copy");
+        goStep("scan");
       } catch (error) {
         document.getElementById("copyOut").innerHTML = escapeHtml(error.message || "生成失败");
         alert(error.message || "文案生成失败");
@@ -1948,6 +2077,18 @@
         `}
         <div class="actions" style="margin:12px 0">
           <button class="btn secondary" onclick="downloadImageJpgs()">下载全部成品图 JPG</button>
+        </div>
+        <div class="factory-toolbar">
+          <strong>统一字体颜色</strong>
+          <div class="color-palette">
+            <button class="color-dot" style="background:#fff8ee" onclick="setPosterColor('#fff8ee')" title="米白"></button>
+            <button class="color-dot" style="background:#fff1b8" onclick="setPosterColor('#fff1b8')" title="奶黄"></button>
+            <button class="color-dot" style="background:#2b2118" onclick="setPosterColor('#2b2118')" title="深棕"></button>
+            <button class="color-dot" style="background:#f7cdd2" onclick="setPosterColor('#f7cdd2')" title="淡粉"></button>
+            <button class="color-dot" style="background:#ffffff" onclick="setPosterColor('#ffffff')" title="纯白"></button>
+            <input type="color" value="${posterGlobalColor || "#fff8ee"}" onchange="setPosterColor(this.value)" title="自定义颜色" style="width:38px;min-height:30px;padding:0">
+          </div>
+          <span class="muted">也可以直接点图上的标题或小字，改文字、拖动位置、拉选框大小。</span>
         </div>
         <div class="image-grid">
           ${slides.map((item, index) => `
@@ -2194,7 +2335,7 @@
           ctx.fillRect(0, 0, canvas.width, canvas.height);
 
           const stylePreset = currentPosterStyle();
-          ctx.fillStyle = stylePreset.ink;
+          ctx.fillStyle = posterGlobalColor || stylePreset.ink;
           ctx.shadowColor = "rgba(0,0,0,.52)";
           ctx.shadowBlur = 10;
           ctx.shadowOffsetY = 3;
@@ -2206,7 +2347,7 @@
           drawWrappedText(ctx, shortPosterTitle(item, index), titleX, titleY, titleWidth, Math.round(titleSize * 1.14), canvasTextFont("title", titleSize), 3);
           ctx.shadowColor = "transparent";
 
-          ctx.fillStyle = stylePreset.noteInk;
+          ctx.fillStyle = posterGlobalColor || stylePreset.noteInk;
           ctx.shadowColor = "rgba(0,0,0,.45)";
           ctx.shadowBlur = 8;
           ctx.shadowOffsetY = 2;
@@ -2326,7 +2467,7 @@
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, width, height);
       const stylePreset = currentPosterStyle();
-      ctx.fillStyle = stylePreset.ink;
+      ctx.fillStyle = posterGlobalColor || stylePreset.ink;
       ctx.shadowColor = "rgba(0,0,0,.52)";
       ctx.shadowBlur = 10;
       ctx.shadowOffsetY = 3;
@@ -2337,7 +2478,7 @@
       const titleWidth = Math.round(width * Math.max(34, 92 - edit.titleX) / 100);
       drawWrappedText(ctx, shortPosterTitle(item, index), titleX, titleY, titleWidth, Math.round(titleSize * 1.14), canvasTextFont("title", titleSize), 2);
       ctx.shadowColor = "transparent";
-      ctx.fillStyle = stylePreset.noteInk;
+      ctx.fillStyle = posterGlobalColor || stylePreset.noteInk;
       const noteSize = Math.round(edit.noteSize * 1.9);
       const noteX = Math.round(width * edit.noteX / 100);
       const noteY = Math.round(height * edit.noteY / 100);
