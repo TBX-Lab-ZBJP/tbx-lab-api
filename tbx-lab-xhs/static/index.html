@@ -459,13 +459,14 @@
       left: 22px;
       right: 22px;
       bottom: 106px;
-      font-size: 30px;
+      font-size: 34px;
       line-height: 1.12;
       font-weight: 950;
       color: #ffffff;
+      font-family: "Arial Rounded MT Bold", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
       text-shadow:
-        0 2px 12px rgba(0,0,0,.48),
-        0 0 2px rgba(0,0,0,.75);
+        0 3px 0 rgba(255, 36, 66, .72),
+        0 7px 18px rgba(0,0,0,.45);
     }
     .poster-note {
       left: 22px;
@@ -478,6 +479,7 @@
       color: rgba(255,255,255,.94);
       font-size: 14px;
       line-height: 1.55;
+      font-weight: 800;
       text-shadow: 0 2px 10px rgba(0,0,0,.5);
     }
     .poster-tags {
@@ -1314,9 +1316,47 @@
     }
 
     function shortPosterTitle(item, index) {
-      const text = String(item.text || latestOutput?.title || "本地生活到店种草");
-      if (text.length <= 26) return text;
-      return text.slice(0, 24) + "…";
+      const lane = document.getElementById("lane")?.value || "";
+      const title = String(latestOutput?.title || "");
+      const material = document.getElementById("material")?.value || "";
+      const text = String(item.text || "");
+      if (text && text.length <= 16 && !/[：:，,。；;]/.test(text)) return text;
+      const hotelLines = [
+        "这里真的好舒服",
+        "好温馨啊",
+        "住得太舒服了",
+        "海景好治愈",
+        "老板人很好",
+        "下次还想来",
+        "姐妹们放心冲",
+        "氛围感拉满"
+      ];
+      const foodLines = [
+        "巨巨巨好吃",
+        "种草了姐妹们",
+        "强烈推荐",
+        "这家真的可",
+        "好吃到想打包",
+        "下次还来",
+        "闭眼点不踩雷",
+        "这一口绝了"
+      ];
+      const isFood = lane.includes("餐") || /餐|菜|锅|烧烤|咖啡|甜品|饭|面|肉|火锅|好吃/.test(title + material);
+      const pool = isFood ? foodLines : hotelLines;
+      return pool[index % pool.length];
+    }
+
+    function shortPosterNote(item, index) {
+      const lane = document.getElementById("lane")?.value || "";
+      const title = String(latestOutput?.title || "");
+      const material = document.getElementById("material")?.value || "";
+      const text = String(item.note || item.visual || "");
+      if (text && text.length <= 22 && !/[：:；;]/.test(text)) return text;
+      const hotelNotes = ["适合周末放空", "随手拍都好看", "晚上更有感觉", "提前订更稳", "适合两个人来", "安静又舒服"];
+      const foodNotes = ["真的很香", "人多点更快乐", "趁热吃绝了", "适合约朋友", "会想再来一次", "这一口很满足"];
+      const isFood = lane.includes("餐") || /餐|菜|锅|烧烤|咖啡|甜品|饭|面|肉|火锅|好吃/.test(title + material);
+      const pool = isFood ? foodNotes : hotelNotes;
+      return pool[index % pool.length];
     }
 
     function posterLabelSet(layout, index) {
@@ -1358,7 +1398,7 @@
           </div>
           <div class="poster-page">${index + 1}/${getComposedSlides(latestOutput?.images || []).length}</div>
           <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
-          <div class="poster-note">${escapeHtml(item.note || item.visual || "真实实拍图，加清楚价格、位置和到店理由。")}</div>
+          <div class="poster-note">${escapeHtml(shortPosterNote(item, index))}</div>
           <div class="poster-tags">
             ${tags.map(tag => `<span class="poster-tag">${escapeHtml(tag)}</span>`).join("")}
           </div>
@@ -1659,7 +1699,7 @@
                       </div>
                       <div class="poster-page">${index + 1}/${slides.length}</div>
                       <div class="poster-title">${escapeHtml(shortPosterTitle(item, index))}</div>
-                      <div class="poster-note">${escapeHtml(item.note)}</div>
+                      <div class="poster-note">${escapeHtml(shortPosterNote(item, index))}</div>
                       <div class="poster-tags">
                         ${posterTags(item.layout).map(tag => `<span class="poster-tag">${escapeHtml(tag)}</span>`).join("")}
                       </div>
@@ -1843,7 +1883,7 @@
             soft: [58, 900, 780, 58, 48],
             question: [58, 640, 680, 70, 62]
           }[layout] || [58, 840, 780, 66, 58];
-          drawWrappedText(ctx, shortPosterTitle(item, index), titlePos[0], titlePos[1], titlePos[2], titlePos[3], `900 ${titlePos[4]}px Microsoft YaHei, sans-serif`, 3);
+          drawWrappedText(ctx, shortPosterTitle(item, index), titlePos[0], titlePos[1], titlePos[2], titlePos[3], `900 ${titlePos[4]}px Microsoft YaHei UI, Microsoft YaHei, sans-serif`, 3);
           ctx.shadowColor = "transparent";
 
           ctx.fillStyle = "rgba(255,255,255,.94)";
@@ -1858,7 +1898,7 @@
             question: [58, 796, 680]
           }[layout] || [58, 1012, 760];
           if (layout !== "soft") {
-            drawWrappedText(ctx, item.note || item.visual || "真实实拍图，加清楚价格、位置和到店理由。", notePos[0], notePos[1], notePos[2], 36, "600 28px Microsoft YaHei, sans-serif", 2);
+            drawWrappedText(ctx, shortPosterNote(item, index), notePos[0], notePos[1], notePos[2], 36, "600 28px Microsoft YaHei, sans-serif", 2);
           }
           ctx.shadowColor = "transparent";
 
