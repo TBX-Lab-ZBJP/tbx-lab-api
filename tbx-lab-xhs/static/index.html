@@ -221,6 +221,128 @@
       line-height: 1.8;
       min-height: 140px;
     }
+    .poster-preview {
+      white-space: normal;
+      background: #ffffff;
+      padding: 16px;
+    }
+    .poster-preview-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+    .poster-preview-head strong {
+      display: block;
+      font-size: 16px;
+      margin-bottom: 4px;
+    }
+    .poster-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .poster-item {
+      display: grid;
+      gap: 8px;
+    }
+    .poster-type-select {
+      min-height: 36px;
+      padding: 6px 8px;
+      font-size: 12px;
+      border-radius: 999px;
+      border-color: #d0d5dd;
+      background: #ffffff;
+    }
+    .poster-card {
+      position: relative;
+      aspect-ratio: 3 / 4;
+      border-radius: 12px;
+      padding: 18px;
+      overflow: hidden;
+      border: 1px solid #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 12px;
+      background: #3157ff;
+      color: #ffffff;
+      min-height: 220px;
+    }
+    .poster-card::before {
+      content: "";
+      position: absolute;
+      inset: 10px;
+      border: 1px solid rgba(255, 255, 255, .22);
+      border-radius: 10px;
+      pointer-events: none;
+    }
+    .poster-card.light {
+      background: #f2f4f7;
+      color: #111827;
+    }
+    .poster-card.warm {
+      background: #fff3df;
+      color: #111827;
+    }
+    .poster-card.dark {
+      background: #111827;
+      color: #ffffff;
+    }
+    .poster-card.pink {
+      background: #fff0f3;
+      color: #111827;
+    }
+    .poster-card.green {
+      background: #eaf8ef;
+      color: #111827;
+    }
+    .poster-card-label {
+      position: relative;
+      width: max-content;
+      max-width: 100%;
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: rgba(255, 255, 255, .22);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .poster-card.light .poster-card-label,
+    .poster-card.warm .poster-card-label,
+    .poster-card.pink .poster-card-label,
+    .poster-card.green .poster-card-label {
+      background: #3157ff;
+      color: #ffffff;
+    }
+    .poster-card-title {
+      position: relative;
+      font-size: clamp(22px, 2.2vw, 32px);
+      line-height: 1.12;
+      font-weight: 950;
+      letter-spacing: 0;
+    }
+    .poster-card-sub {
+      position: relative;
+      font-size: 13px;
+      line-height: 1.55;
+      font-weight: 800;
+      opacity: .86;
+    }
+    .poster-card-brand {
+      position: absolute;
+      right: 18px;
+      bottom: 16px;
+      font-size: 12px;
+      font-weight: 950;
+      opacity: .9;
+    }
+    .poster-note {
+      margin-top: 12px;
+      color: #667085;
+      font-size: 12px;
+      line-height: 1.7;
+    }
     .variant-toggle {
       border: 0;
       background: transparent;
@@ -897,6 +1019,21 @@
         padding: 10px 12px;
         font-size: 14px;
       }
+      .poster-preview {
+        padding: 12px;
+      }
+      .poster-preview-head {
+        display: block;
+      }
+      .poster-grid {
+        grid-template-columns: 1fr;
+      }
+      .poster-card {
+        min-height: 360px;
+      }
+      .poster-card-title {
+        font-size: 32px;
+      }
     }
   </style>
 </head>
@@ -1100,7 +1237,7 @@
           </div>
           <div class="card">
             <h2>发布预览</h2>
-            <div id="publishPreview" class="preview-box">生成并确认后，这里显示纯文案预览。</div>
+            <div id="publishPreview" class="preview-box">生成并确认后，这里显示 9 张大字报图文预览。</div>
           </div>
         </div>
 
@@ -1193,6 +1330,7 @@
     let currentStep = "collect";
     let isRestoringDraft = false;
     let currentHistoryDetail = "";
+    let posterTypeState = ["cover", "product", "detail", "scene", "price", "reason", "compare", "review", "action"];
 
     async function apiPost(path, payload) {
       const response = await fetch(path, {
@@ -1752,6 +1890,104 @@
       updateProgress();
     }
 
+    const posterTypeOptions = [
+      { value: "cover", label: "封面", hint: "高点击标题" },
+      { value: "product", label: "产品主图", hint: "主推产品/房型" },
+      { value: "detail", label: "细节图", hint: "亮点细节" },
+      { value: "scene", label: "场景图", hint: "消费场景" },
+      { value: "price", label: "价格图", hint: "价格/套餐" },
+      { value: "reason", label: "到店理由", hint: "为什么值得来" },
+      { value: "compare", label: "对比图", hint: "选择理由" },
+      { value: "review", label: "口碑图", hint: "真实感受" },
+      { value: "action", label: "行动图", hint: "收藏/到店动作" }
+    ];
+
+    function updatePosterType(index, value) {
+      posterTypeState[index] = value;
+      if (latestOutput && document.getElementById("identityCheck").checked) {
+        document.getElementById("publishPreview").innerHTML = buildPosterPreviewHtml();
+      }
+    }
+
+    function compactPosterLine(text, fallback = "这家值得收藏") {
+      const cleaned = String(text || "")
+        .replace(/#[^\s#]+/g, "")
+        .replace(/[{}[\]"“”]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      return (cleaned || fallback).slice(0, 24);
+    }
+
+    function splitPosterSentences(text) {
+      return String(text || "")
+        .replace(/#[^\s#]+/g, "")
+        .split(/[。！？!?\n]/)
+        .map(item => item.trim())
+        .filter(item => item && item.length >= 4)
+        .slice(0, 18);
+    }
+
+    function getPosterCopy(type, index, sentences, profile) {
+      const title = compactPosterLine(latestOutput?.title || document.getElementById("titleSelect")?.selectedOptions?.[0]?.textContent, "这家店值得收藏");
+      const store = compactPosterLine(profile.store_name, "这家店");
+      const category = profile.category || document.getElementById("lane")?.value || "本地生活";
+      const district = compactPosterLine(profile.district || profile.city, "附近");
+      const price = profile.avg_price ? `人均 ${profile.avg_price} 元左右` : "价格先看清楚";
+      const products = Array.isArray(profile.signature_items) && profile.signature_items.length ? profile.signature_items : [];
+      const selling = Array.isArray(profile.selling_points) && profile.selling_points.length ? profile.selling_points : [];
+      const fromText = compactPosterLine(sentences[index] || sentences[index + 1] || title);
+      const product = compactPosterLine(products[index % Math.max(products.length, 1)] || selling[index % Math.max(selling.length, 1)] || fromText, "主推这一款");
+      const reason = compactPosterLine(selling[index % Math.max(selling.length, 1)] || fromText, "舒服、方便、值得来");
+      const map = {
+        cover: { label: "封面", title, sub: `${category}老板可直接参考` },
+        product: { label: "产品主图", title: product, sub: `主推内容：${store}` },
+        detail: { label: "细节图", title: fromText, sub: "放大一个真实细节" },
+        scene: { label: "场景图", title: `${district}适合这样拍`, sub: "把到店场景说清楚" },
+        price: { label: "价格图", title: price, sub: "避免价格信息说不清" },
+        reason: { label: "到店理由", title: reason, sub: "给用户一个收藏理由" },
+        compare: { label: "对比图", title: fromText.includes("不是") ? fromText : "别只看热闹，先看值不值", sub: "用反差提高停留" },
+        review: { label: "口碑图", title: fromText, sub: "更像真实体验，不像硬广" },
+        action: { label: "行动图", title: "先收藏，到店前再看", sub: "发布前确认价格和门店信息" }
+      };
+      return map[type] || map.cover;
+    }
+
+    function buildPosterPreviewHtml() {
+      const profile = getMerchantProfile() || {};
+      const longText = latestOutput?.content_long || latestOutput?.body || "";
+      const sentences = splitPosterSentences(`${latestOutput?.title || ""}\n${longText}\n${latestOutput?.content_short || ""}`);
+      const themes = ["", "light", "warm", "dark", "pink", "green", "", "light", "warm"];
+      const optionsHtml = posterTypeOptions.map(option => `<option value="${option.value}">${option.label}</option>`).join("");
+      const cards = Array.from({ length: 9 }, (_, index) => {
+        const type = posterTypeState[index] || posterTypeOptions[index % posterTypeOptions.length].value;
+        const copy = getPosterCopy(type, index, sentences, profile);
+        const theme = themes[index] || "";
+        return `
+          <div class="poster-item">
+            <select class="poster-type-select" onchange="updatePosterType(${index}, this.value)" aria-label="第 ${index + 1} 张图片类型">
+              ${optionsHtml.replace(`value="${type}"`, `value="${type}" selected`)}
+            </select>
+            <div class="poster-card ${theme}">
+              <div class="poster-card-label">第 ${index + 1} 张 · ${escapeHtml(copy.label)}</div>
+              <div class="poster-card-title">${escapeHtml(copy.title)}</div>
+              <div class="poster-card-sub">${escapeHtml(copy.sub)}</div>
+              <div class="poster-card-brand">特别想-Lab</div>
+            </div>
+          </div>`;
+      }).join("");
+      return `
+        <div class="poster-preview">
+          <div class="poster-preview-head">
+            <div>
+              <strong>9 张大字报图文预览</strong>
+              <div class="muted">根据当前文案自动拆出封面、主图、细节、价格、到店理由等卡片。每张上方可切换图片类型。</div>
+            </div>
+          </div>
+          <div class="poster-grid">${cards}</div>
+          <div class="poster-note">提示：这里是发布前的图文排版预览，用于指导员工做 9 张小红书图。实际图片仍需替换为商家实拍图、产品主图或细节图。</div>
+        </div>`;
+    }
+
     function renderPublishPreview() {
       if (!document.getElementById("identityCheck").checked) {
         document.getElementById("reviewHint").textContent = "请先确认未出现站外导流、虚假宣传、过度营销、夸大承诺等限流风险内容。";
@@ -1762,7 +1998,7 @@
         return;
       }
       const publishText = buildPublishText();
-      document.getElementById("publishPreview").textContent = publishText;
+      document.getElementById("publishPreview").innerHTML = buildPosterPreviewHtml();
       document.getElementById("materialCopyText").textContent = publishText;
       archiveCurrent();
     }
