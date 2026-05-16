@@ -221,6 +221,81 @@
       line-height: 1.8;
       min-height: 140px;
     }
+    .variant-toggle {
+      border: 0;
+      background: transparent;
+      color: #3157ff;
+      font-weight: 900;
+      cursor: pointer;
+      padding: 0;
+      margin-top: 6px;
+    }
+    .variant-row td {
+      background: #fbfcff;
+      border-bottom-color: #f0f2f5;
+    }
+    .variant-choice {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-left: 22px;
+      font-weight: 800;
+    }
+    .variant-choice.active {
+      color: #3157ff;
+    }
+    .style-tabs, .version-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 10px 0 14px;
+    }
+    .style-tabs button, .version-tabs button {
+      border: 1px solid #e5e7eb;
+      background: #f8fafc;
+      border-radius: 999px;
+      padding: 9px 13px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .style-tabs button.active, .version-tabs button.active {
+      background: #111111;
+      color: #ffffff;
+      border-color: #111111;
+    }
+    .copy-block {
+      border: 1px solid #e6e6e6;
+      border-radius: 8px;
+      background: #ffffff;
+      margin-top: 12px;
+      overflow: hidden;
+    }
+    .copy-block header {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 14px;
+      background: #f8fafc;
+      font-weight: 950;
+    }
+    .copy-block .content {
+      padding: 14px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .copy-block.collapsed .content {
+      display: none;
+    }
+    .mini-btn {
+      border: 1px solid #d0d5dd;
+      background: #ffffff;
+      border-radius: 7px;
+      padding: 7px 10px;
+      font-weight: 900;
+      cursor: pointer;
+    }
     .scan-result-card {
       border: 1px solid #e6e6e6;
       border-radius: 8px;
@@ -536,8 +611,14 @@
             <h2>02 文案生成</h2>
             <label class="field">
               <span>生产池标题</span>
-              <select id="titleSelect"></select>
+              <select id="titleSelect" onchange="handleTitleChange()"></select>
             </label>
+            <div class="style-tabs" id="styleTabs">
+              <button class="active" onclick="selectStyle('style_warm')">🌸 亲切</button>
+              <button onclick="selectStyle('style_pro')">📋 专业</button>
+              <button onclick="selectStyle('style_contrast')">💥 反差</button>
+            </div>
+            <div class="version-tabs" id="versionTabs"></div>
             <label class="field">
               <span>生成类型</span>
               <select id="outputType">
@@ -566,6 +647,7 @@
               <span>待扫描文案</span>
               <textarea id="scanText">我们是官方服务商，保证GMV，全网最低，扫码加我微信。</textarea>
             </label>
+            <div class="muted">有长短版文案时，系统会同时扫描两版，任一命中即不通过。</div>
             <button class="btn secondary" onclick="scan()">开始扫描</button>
           </div>
           <div class="card">
@@ -670,9 +752,16 @@
     const DRAFT_KEY = "tbx_current_draft";
     const HISTORY_KEY = "tbx_history";
     const stepOrder = ["collect", "write", "scan", "review"];
+    const styleLabels = {
+      style_warm: "🌸 亲切",
+      style_pro: "📋 专业",
+      style_contrast: "💥 反差"
+    };
     let hotTitles = [];
     let approvedTitles = [];
     let latestOutput = null;
+    let activeStyle = "style_warm";
+    let generatedContents = {};
     let latestScanResult = null;
     let currentStep = "collect";
     let isRestoringDraft = false;
@@ -792,6 +881,22 @@
       return Array.from(document.querySelectorAll(".hotCheck:checked")).map(el => el.value);
     }
 
+    function getSelectedTitleChoices() {
+      return getSelectedTitleIds().map(id => {
+        const item = hotTitles.find(topic => topic.id === id) || {};
+        const checked = document.querySelector(`input[name="variant_${cssSafe(id)}"]:checked`);
+        const variant = checked?.value || "original";
+        const variants = item.variants || {};
+        const chosenTitle = variant === "original" ? item.title : variants[variant];
+        return {
+          original_id: id,
+          chosen_variant: variant,
+          chosen_title: chosenTitle || item.title || "",
+          hook_type: variant === "original" ? (item.hook_type || "") : variant
+        };
+      });
+    }
+
     function buildDraftState() {
       return {
         step: currentStep,
@@ -800,8 +905,11 @@
         keyword: document.getElementById("hotKeyword").value,
         collected_titles: hotTitles,
         selected_title_ids: getSelectedTitleIds(),
+        selected_title_variants: getSelectedTitleChoices(),
         generated_content: latestOutput ? buildPublishText() : "",
         generated_result: latestOutput,
+        active_style: activeStyle,
+        generated_contents: generatedContents,
         scan_result: latestScanResult,
         merchant_snapshot: getMerchantProfile(),
         updated_at: new Date().toISOString()
@@ -888,16 +996,70 @@
     function renderHotRows() {
       const rows = hotTitles.map((item, index) => `
         <tr>
-          <td><input class="hotCheck" type="checkbox" value="${escapeHtml(item.id)}" onchange="updateSelectedCount(); saveDraft(); updateProgress();"></td>
+          <td><input class="hotCheck" type="checkbox" value="${escapeHtml(item.id)}" onchange="selectOriginalTitle('${escapeHtml(item.id)}')"></td>
           <td>${index + 1}</td>
-          <td><strong>${escapeHtml(item.title)}</strong><br><span class="muted">${escapeHtml(item.source_style || "")}</span></td>
+          <td>
+            <strong>${escapeHtml(item.title)}</strong><br>
+            <span class="muted">${escapeHtml(item.source_style || "")}</span><br>
+            <button class="variant-toggle" onclick="toggleVariants('${escapeHtml(item.id)}')">显示变体 ▾</button>
+          </td>
           <td>${escapeHtml(item.platform || "小红书")}</td>
           <td><strong>${escapeHtml(item.heat || "")}</strong></td>
           <td>${escapeHtml(item.direction || "")}</td>
         </tr>
+        ${renderVariantRows(item)}
       `).join("");
       document.getElementById("hotRows").innerHTML = rows || `<tr><td colspan="6" class="muted">暂无参考标题。</td></tr>`;
       updateSelectedCount();
+    }
+
+    function renderVariantRows(item) {
+      const variants = item.variants || {};
+      const rows = [
+        ["emotion", "🎭 情绪型", variants.emotion],
+        ["number", "🔢 数字型", variants.number],
+        ["suspense", "🎲 悬念型", variants.suspense]
+      ];
+      return rows.map(([key, label, title]) => `
+        <tr class="variant-row hidden" data-parent="${escapeHtml(item.id)}">
+          <td></td>
+          <td></td>
+          <td colspan="4">
+            <label class="variant-choice" data-choice="${escapeHtml(item.id)}_${key}">
+              <input type="radio" name="variant_${escapeHtml(item.id)}" value="${key}" onchange="selectVariantTitle('${escapeHtml(item.id)}', '${key}')">
+              <span>${label}</span>
+              <strong>${escapeHtml(title || item.title)}</strong>
+            </label>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    function toggleVariants(id) {
+      document.querySelectorAll(`.variant-row[data-parent="${cssSafe(id)}"]`).forEach(row => row.classList.toggle("hidden"));
+    }
+
+    function selectOriginalTitle(id) {
+      const checkbox = document.querySelector(`.hotCheck[value="${cssSafe(id)}"]`);
+      document.querySelectorAll(`input[name="variant_${cssSafe(id)}"]`).forEach(input => input.checked = false);
+      updateSelectedCount();
+      updateVariantHighlights();
+      saveDraft();
+    }
+
+    function selectVariantTitle(id, variant) {
+      const checkbox = document.querySelector(`.hotCheck[value="${cssSafe(id)}"]`);
+      if (checkbox) checkbox.checked = true;
+      updateSelectedCount();
+      updateVariantHighlights();
+      saveDraft();
+    }
+
+    function updateVariantHighlights() {
+      document.querySelectorAll(".variant-choice").forEach(label => label.classList.remove("active"));
+      document.querySelectorAll(".variant-choice input:checked").forEach(input => {
+        input.closest(".variant-choice")?.classList.add("active");
+      });
     }
 
     function updateSelectedCount() {
@@ -913,20 +1075,71 @@
     }
 
     function approveTitles() {
-      const checkedIds = Array.from(document.querySelectorAll(".hotCheck:checked")).map(el => el.value);
-      approvedTitles = hotTitles.filter(item => checkedIds.includes(item.id));
+      const choices = getSelectedTitleChoices();
+      approvedTitles = choices.map(choice => {
+        const item = hotTitles.find(topic => topic.id === choice.original_id) || {};
+        return {
+          ...item,
+          title: choice.chosen_title,
+          original_title: item.title,
+          original_id: choice.original_id,
+          chosen_variant: choice.chosen_variant,
+          hook_type: choice.hook_type
+        };
+      });
       if (!approvedTitles.length) {
         alert("请先勾选至少 1 个选题");
         return;
       }
-      document.getElementById("titleSelect").innerHTML = approvedTitles.map(item => `<option>${escapeHtml(item.title)}</option>`).join("");
+      document.getElementById("titleSelect").innerHTML = approvedTitles.map((item, index) => `<option value="${index}">${escapeHtml(item.title)}</option>`).join("");
+      resetGeneratedContent();
       document.getElementById("approvedCount").textContent = `已入池 ${approvedTitles.length} 个`;
       saveDraft();
       goStep("write");
     }
 
-    async function generate() {
-      const title = document.getElementById("titleSelect").value;
+    function getCurrentApprovedTitle() {
+      const index = Number(document.getElementById("titleSelect").value || 0);
+      return approvedTitles[index] || null;
+    }
+
+    function handleTitleChange() {
+      resetGeneratedContent();
+      saveDraft();
+      renderCopy(null);
+    }
+
+    function resetGeneratedContent() {
+      latestOutput = null;
+      latestScanResult = null;
+      generatedContents = {};
+      document.getElementById("versionTabs").innerHTML = "";
+    }
+
+    async function selectStyle(style) {
+      activeStyle = style;
+      renderStyleTabs();
+      if (generatedContents[style]) {
+        latestOutput = generatedContents[style];
+        renderCopy(latestOutput);
+        document.getElementById("scanText").value = buildScanText();
+        saveDraft();
+        return;
+      }
+      if (getCurrentApprovedTitle()) {
+        await generate(false);
+      }
+    }
+
+    function renderStyleTabs() {
+      document.querySelectorAll("#styleTabs button").forEach(button => {
+        button.classList.toggle("active", button.textContent.trim() === styleLabels[activeStyle]);
+      });
+    }
+
+    async function generate(advance = true) {
+      const selected = getCurrentApprovedTitle();
+      const title = selected?.title || "";
       if (!title) {
         alert("请先在选题参考页勾选标题");
         return;
@@ -946,14 +1159,18 @@
           keyword: document.getElementById("hotKeyword").value,
           material: document.getElementById("material").value,
           framework: "避坑警告",
+          style: activeStyle,
+          selected_title: title,
+          hook_type: selected?.hook_type || "",
           merchant_profile: getMerchantProfile()
         });
         latestOutput = result;
+        generatedContents[activeStyle] = result;
         renderCopy(result);
-        document.getElementById("scanText").value = result.body || "";
+        document.getElementById("scanText").value = buildScanText();
         saveDraft();
         updateProgress();
-        goStep("scan");
+        if (advance) goStep("scan");
       } catch (error) {
         document.getElementById("copyOut").textContent = error.message || "文案生成失败";
         alert(error.message || "文案生成失败");
@@ -966,12 +1183,51 @@
     }
 
     function renderCopy(result) {
+      if (!result) {
+        document.getElementById("copyOut").innerHTML = "请选择标题并生成文案。";
+        return;
+      }
+      const longText = result.content_long || result.body || "";
+      const shortText = result.content_short || "";
       const tags = (result.tags || []).map(tag => `#${tag}`).join(" ");
-      const text = `${result.title || ""}\n\n${result.body || ""}\n\n${tags}\n\n置顶评论：${result.firstComment || ""}`;
+      const longFull = `${result.title || ""}\n\n${longText}\n\n${tags}\n\n置顶评论：${result.firstComment || ""}`;
+      const shortFull = shortText || "短版内容生成后显示。";
       const hint = getMerchantProfile()
         ? ""
         : `<div class="muted" style="margin-bottom:12px">💡 完善商家档案可获得更精准的生成结果</div>`;
-      document.getElementById("copyOut").innerHTML = `${hint}<div>${escapeHtml(text).replaceAll("\n", "<br>")}</div>`;
+      document.getElementById("versionTabs").innerHTML = Object.keys(generatedContents).map(style => `
+        <button class="${style === activeStyle ? "active" : ""}" onclick="selectStyle('${style}')">${styleLabels[style]} 已生成</button>
+      `).join("");
+      document.getElementById("copyOut").innerHTML = `${hint}
+        <div class="copy-block">
+          <header>
+            <span>📄 长版（主笔记） ${countChars(longText)} 字</span>
+            <button class="mini-btn" onclick="copyTextBlock('long')">复制</button>
+          </header>
+          <div class="content">${escapeHtml(longFull)}</div>
+        </div>
+        <div class="copy-block collapsed" id="shortBlock">
+          <header onclick="toggleShortBlock()">
+            <span>✂️ 短版（评论区/私信用） ${countChars(shortText)} 字</span>
+            <button class="mini-btn" onclick="event.stopPropagation(); copyTextBlock('short')">复制</button>
+          </header>
+          <div class="content">${escapeHtml(shortFull)}</div>
+        </div>`;
+    }
+
+    function toggleShortBlock() {
+      document.getElementById("shortBlock")?.classList.toggle("collapsed");
+    }
+
+    async function copyTextBlock(type) {
+      const text = type === "short" ? (latestOutput?.content_short || "") : buildPublishText();
+      if (!text) return alert("暂无内容");
+      await navigator.clipboard.writeText(text);
+      showToast("已复制");
+    }
+
+    function countChars(text) {
+      return String(text || "").replace(/\s/g, "").length;
     }
 
     function scanText(text) {
@@ -985,14 +1241,18 @@
     }
 
     async function scan() {
-      const text = document.getElementById("scanText").value;
+      const text = buildScanText() || document.getElementById("scanText").value;
       document.getElementById("scanOut").className = "scan-result-card";
       document.getElementById("scanOut").textContent = "正在扫描...";
       try {
-        const result = await apiPost("/api/v1/xhs/scan", { text });
+        const result = await apiPost("/api/v1/xhs/scan", {
+          text,
+          content_long: latestOutput?.content_long || latestOutput?.body || "",
+          content_short: latestOutput?.content_short || ""
+        });
         renderScanResult(result);
       } catch (error) {
-        renderScanResult(scanText(text));
+        renderScanResult(scanBothText());
         alert(error.message || "后端扫描失败，已显示本地扫描结果");
       }
     }
@@ -1002,16 +1262,39 @@
       const passed = !!result.passed;
       const terms = result.risk_terms || result.hits || [];
       const suggestions = result.suggestions || [];
+      const longResult = result.long_result || result.long || null;
+      const shortResult = result.short_result || result.short || null;
       const box = document.getElementById("scanOut");
       box.className = `scan-result-card ${passed ? "pass" : "warn"}`;
       box.innerHTML = `
         <div class="scan-status ${passed ? "pass" : "warn"}">${passed ? "扫描通过" : "发现风险"}</div>
         <div>${passed ? "未发现内置身份红线、价格红线、效果承诺或站外导流风险。" : `命中风险词：<strong>${terms.map(escapeHtml).join("、") || "需人工复核"}</strong>`}</div>
+        ${longResult ? renderScanVersion("长版", longResult) : ""}
+        ${shortResult ? renderScanVersion("短版", shortResult) : ""}
         <ul>${(suggestions.length ? suggestions : ["发布前仍需人工复核事实、价格、品牌身份和案例真实性。"]).map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       `;
       saveDraft();
       updateProgress();
       if (advance && latestOutput) goStep("review");
+    }
+
+    function renderScanVersion(label, result) {
+      const terms = result.risk_terms || [];
+      return `<div style="margin-top:8px"><strong>${label}：</strong>${result.passed ? "通过" : `命中 ${terms.map(escapeHtml).join("、") || "风险词"}`}</div>`;
+    }
+
+    function scanBothText() {
+      const longResult = scanText(latestOutput?.content_long || latestOutput?.body || "");
+      const shortResult = scanText(latestOutput?.content_short || "");
+      const merged = Array.from(new Set([...(longResult.risk_terms || []), ...(shortResult.risk_terms || [])]));
+      return {
+        passed: longResult.passed && shortResult.passed,
+        risk_terms: merged,
+        score: Math.min(longResult.score, shortResult.score),
+        suggestions: merged.length ? ["长短版均需删除命中红线", "改成站内咨询或评论区承接"] : ["长短版均可进入员工事实审核"],
+        long_result: longResult,
+        short_result: shortResult
+      };
     }
 
     function togglePreviewButton() {
@@ -1040,7 +1323,14 @@
     function buildPublishText() {
       if (!latestOutput) return "";
       const tags = (latestOutput.tags || []).map(tag => `#${tag}`).join(" ");
-      return `${latestOutput.title || ""}\n\n${latestOutput.body || ""}\n\n${tags}\n\n置顶评论：${latestOutput.firstComment || ""}`;
+      const longText = latestOutput.content_long || latestOutput.body || "";
+      const shortText = latestOutput.content_short || "";
+      return `${latestOutput.title || ""}\n\n${longText}\n\n${tags}\n\n置顶评论：${latestOutput.firstComment || ""}${shortText ? `\n\n短版备用：\n${shortText}` : ""}`;
+    }
+
+    function buildScanText() {
+      if (!latestOutput) return "";
+      return `${latestOutput.content_long || latestOutput.body || ""}\n\n${latestOutput.content_short || ""}`;
     }
 
     async function copyPublishText() {
@@ -1072,18 +1362,37 @@
       hotTitles = Array.isArray(draft.collected_titles) ? draft.collected_titles : [];
       renderHotRows();
       const selected = new Set(draft.selected_title_ids || []);
+      const selectedVariants = draft.selected_title_variants || [];
       document.querySelectorAll(".hotCheck").forEach(input => {
         input.checked = selected.has(input.value);
       });
+      selectedVariants.forEach(choice => {
+        const radio = document.querySelector(`input[name="variant_${cssSafe(choice.original_id)}"][value="${cssSafe(choice.chosen_variant)}"]`);
+        if (radio && choice.chosen_variant !== "original") radio.checked = true;
+      });
+      updateVariantHighlights();
       updateSelectedCount();
-      approvedTitles = hotTitles.filter(item => selected.has(item.id));
+      approvedTitles = (selectedVariants.length ? selectedVariants : getSelectedTitleChoices()).map(choice => {
+        const item = hotTitles.find(topic => topic.id === choice.original_id) || {};
+        return {
+          ...item,
+          title: choice.chosen_title || item.title || "",
+          original_title: item.title,
+          original_id: choice.original_id,
+          chosen_variant: choice.chosen_variant || "original",
+          hook_type: choice.hook_type || ""
+        };
+      }).filter(item => item.title);
       if (approvedTitles.length) {
-        document.getElementById("titleSelect").innerHTML = approvedTitles.map(item => `<option>${escapeHtml(item.title)}</option>`).join("");
+        document.getElementById("titleSelect").innerHTML = approvedTitles.map((item, index) => `<option value="${index}">${escapeHtml(item.title)}</option>`).join("");
       }
-      latestOutput = draft.generated_result || null;
+      activeStyle = draft.active_style || "style_warm";
+      generatedContents = draft.generated_contents || {};
+      latestOutput = generatedContents[activeStyle] || draft.generated_result || null;
+      renderStyleTabs();
       if (latestOutput) {
         renderCopy(latestOutput);
-        document.getElementById("scanText").value = latestOutput.body || draft.generated_content || "";
+        document.getElementById("scanText").value = buildScanText() || draft.generated_content || "";
       } else if (draft.generated_content) {
         document.getElementById("copyOut").textContent = draft.generated_content;
         document.getElementById("scanText").value = draft.generated_content;
@@ -1213,6 +1522,10 @@
       const hours = Math.floor(minutes / 60);
       if (hours < 24) return `${hours} 小时前`;
       return `${Math.floor(hours / 24)} 天前`;
+    }
+
+    function cssSafe(value) {
+      return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(String(value)) : String(value).replace(/"/g, '\\"');
     }
 
     function isStepDone(step) {

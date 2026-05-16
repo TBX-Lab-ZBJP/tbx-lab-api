@@ -71,6 +71,9 @@ class HotTitleRequest(BaseModel):
 
 class DraftRequest(BaseModel):
     title: str
+    selected_title: str = ""
+    hook_type: str = ""
+    style: str = "style_warm"
     outputType: str = "标准笔记素材包"
     noteShape: str = "标准笔记素材包"
     framework: str = "避坑警告"
@@ -82,6 +85,8 @@ class DraftRequest(BaseModel):
 
 class ScanRequest(BaseModel):
     text: str = ""
+    content_long: str = ""
+    content_short: str = ""
 
 
 def merchant_profile_prompt(profile: dict[str, Any] | None) -> str:
@@ -172,10 +177,15 @@ async def generate_hot_titles_with_hunyuan(payload: HotTitleRequest) -> dict[str
 请基于用户输入的行业、关键词，以及提供的行业爆款标题参考，生成 30 个“小红书本地生活爆款选题参考”。
 注意：这不是实时抓取小红书榜单，不要声称“真实实时数据”。你是在参考池基础上做二次改写。
 如用户提供了商家信息，必须把店名、所在商圈、招牌产品、卖点融入选题中。
+为每个改写选题，额外生成 3 个差异化标题变体：
+variant_emotion（情绪型）：以强情绪词开头，如绝绝子、谁懂啊、姐妹们救命、终于找到、爱了爱了。
+variant_number（数字型）：以具体数字开头，如人均XX、3 个理由、1 次想来 5 次、藏了 3 年。
+variant_suspense（悬念型）：以反差/疑问开头，如藏了 N 年没敢推荐、老板不让说、本来不想分享但。
+规则：三条均 ≤ 22 字；不与原标题、变体相互重复；必须融入商家档案的店名/品类/地段元素；禁用词：最、第一、最低、独家、保证、官方、绝对、唯一。
 必须输出严格 JSON：
 {
   "items": [
-    {"id":"hot_1","title":"...","platform":"小红书","heat":88,"direction":"新品种草 · 季节","source_style":"真实体验日记"}
+    {"id":"hot_1","title":"...","type":"种草","hook_type":"情绪","variants":{"emotion":"...","number":"...","suspense":"..."},"platform":"小红书","heat":88,"direction":"新品种草 · 季节","source_style":"真实体验日记"}
   ]
 }
 标题要像真实运营写的，不要夸大承诺，不要写保证爆单。只输出 JSON。
@@ -193,9 +203,13 @@ async def generate_hot_titles_with_hunyuan(payload: HotTitleRequest) -> dict[str
         raise RuntimeError("模型没有返回有效选题")
     normalized = []
     for index, item in enumerate(items[:30]):
+        title = str(item.get("title") or "").strip()
         normalized.append({
             "id": str(item.get("id") or f"hot_{index + 1}"),
-            "title": str(item.get("title") or "").strip(),
+            "title": title,
+            "type": str(item.get("type") or "种草"),
+            "hook_type": str(item.get("hook_type") or "情绪"),
+            "variants": normalize_variants(item.get("variants"), title, payload.merchant_profile, lane, index),
             "platform": str(item.get("platform") or payload.platform or "小红书"),
             "heat": int(item.get("heat") or (88 - index % 18)),
             "direction": str(item.get("direction") or "到店理由"),
@@ -230,6 +244,9 @@ def fallback_hot_titles(payload: HotTitleRequest) -> dict[str, Any]:
         items.append({
             "id": f"hot_{index + 1}",
             "title": title,
+            "type": "种草" if index % 2 else "避坑",
+            "hook_type": ["情绪", "数字", "悬念"][index % 3],
+            "variants": normalize_variants({}, title, payload.merchant_profile, lane, index),
             "platform": platforms[index % len(platforms)],
             "heat": 72 + ((index * 7) % 27),
             "direction": base["direction"],
@@ -239,8 +256,59 @@ def fallback_hot_titles(payload: HotTitleRequest) -> dict[str, Any]:
     return {"count": len(items), "items": items}
 
 
+def normalize_variants(raw: Any, title: str, profile: dict[str, Any] | None, lane: str, index: int) -> dict[str, str]:
+    variants = raw if isinstance(raw, dict) else {}
+    generated = fallback_variants(title, profile, lane, index)
+    anchor = variant_anchor(profile, lane)
+    def pick(*keys: str) -> str:
+        value = ""
+        for key in keys:
+            value = str(variants.get(key) or "").strip()
+            if value:
+                break
+        if not value or (anchor and anchor not in value):
+            value = generated[keys[0].replace("variant_", "")]
+        return value[:22]
+    return {
+        "emotion": pick("emotion", "variant_emotion"),
+        "number": pick("number", "variant_number"),
+        "suspense": pick("suspense", "variant_suspense"),
+    }
+
+
+def fallback_variants(title: str, profile: dict[str, Any] | None, lane: str, index: int) -> dict[str, str]:
+    anchor = variant_anchor(profile, lane)
+    number_prefix = "人均80" if lane == "餐饮" else "3个理由"
+    return {
+        "emotion": f"谁懂啊 {anchor}真香",
+        "number": f"{number_prefix}想冲{anchor}",
+        "suspense": f"本来不想分享{anchor}",
+    }
+
+
+def variant_anchor(profile: dict[str, Any] | None, lane: str) -> str:
+    profile = profile or {}
+    store_name = str(profile.get("store_name") or "").strip()
+    district = str(profile.get("district") or "").strip()
+    signature_items = profile.get("signature_items") if isinstance(profile.get("signature_items"), list) else []
+    signature = str(signature_items[0]).strip() if signature_items else ""
+    return store_name or signature or district or lane
+
+
 @app.post("/api/v1/xhs/scan")
 def scan(payload: ScanRequest) -> dict[str, Any]:
+    if payload.content_long or payload.content_short:
+        long_result = scan_text(payload.content_long)
+        short_result = scan_text(payload.content_short)
+        terms = list(dict.fromkeys(long_result["risk_terms"] + short_result["risk_terms"]))
+        return {
+            "passed": long_result["passed"] and short_result["passed"],
+            "risk_terms": terms,
+            "score": min(long_result["score"], short_result["score"]),
+            "suggestions": ["长短版均需删除命中红线", "改成站内咨询或评论区关键词"] if terms else ["长短版均可进入员工事实审核"],
+            "long_result": long_result,
+            "short_result": short_result,
+        }
     return scan_text(payload.text)
 
 
@@ -260,7 +328,7 @@ async def draft(payload: DraftRequest) -> dict[str, Any]:
     result["firstComment"] = result.get("firstComment") or result.get("first_comment") or "想要结构参考的朋友，评论扣「模板」。"
     result["tags"] = normalize_tags(result.get("tags"))
     result["benchmark"] = result.get("benchmark") or fixed_benchmark()
-    result["compliance"] = scan_text(json.dumps(result, ensure_ascii=False))
+    result["compliance"] = scan(ScanRequest(content_long=result.get("content_long", ""), content_short=result.get("content_short", "")))
     result["status"] = "employee_review_required"
     result["outputType"] = "标准笔记素材包"
     return result
@@ -273,13 +341,20 @@ async def generate_with_hunyuan(user_input: dict[str, Any]) -> dict[str, Any]:
 
     base_url = os.getenv("HUNYUAN_BASE_URL", HUNYUAN_BASE_URL).rstrip("/")
     model = os.getenv("HUNYUAN_MODEL", HUNYUAN_MODEL)
+    style = str(user_input.get("style") or "style_warm")
+    style_prompts = {
+        "style_warm": "style_warm（亲切闺蜜型）：第一人称“我”、姐妹们、家人们；每段 1-2 个 emoji；多用感叹号和转折词；用词口语化，如绝了、真的爱、冲就完事、姐妹必去。",
+        "style_pro": "style_pro（专业测评型）：第一人称“我/我们”；客观描述与主观感受 7:3；全篇 emoji ≤ 5 个；可用数据化表达，如面积、等位、人均；专业但不生硬。",
+        "style_contrast": "style_contrast（反差爆点型）：强反差开头；每段制造 1 个反转；多用反问、设问；结尾留悬念引导评论。",
+    }
     system_prompt = """
 你是“特别想-Lab”的本地生活小红书带客素材包工具，第一批目标用户是餐饮和酒旅老板。
 老板真正付费的不是内容工具，而是带客结果：收藏、咨询、团购点击、预约、核销、到店。
 你要根据行业、爆款选题参考、店铺信息、菜品/房型/价格/位置/规则，生成可审核、可手动发布的小红书标准笔记素材包。
 必须输出严格 JSON，不要 Markdown，不要代码块。字段：
 title: 字符串
-body: 字符串，包含完整正文
+content_long: 字符串，长版文案 280-380 字，作为主笔记正文
+content_short: 字符串，短版文案 100-150 字，用于评论区追加、私信发送、群发
 tags: 字符串数组，8 到 12 个标签，不带 # 号
 firstComment: 字符串
 benchmark: 对标参考对象，包含 accounts、notes、usage
@@ -291,8 +366,9 @@ benchmark: 对标参考对象，包含 accounts、notes、usage
 文案必须像真实用户发的小红书笔记，不要像广告、招商页或机构营销话术。
 正文允许自然使用 5 到 10 个 emoji，但不要每句话都堆。
 不要使用“实时榜单”“真实实时数据”口径，统一使用“爆款选题参考”“行业爆款标题”口径。
+短版要求：保留长版的核心钩子和到店动作，删除铺垫和情绪渲染，适合作为评论区补充信息或私信发送。
 """.strip()
-    system_prompt = f"{system_prompt}\n\n{merchant_profile_prompt(user_input.get('merchant_profile'))}"
+    system_prompt = f"{system_prompt}\n\n【当前文案风格】\n{style_prompts.get(style, style_prompts['style_warm'])}\n\n{merchant_profile_prompt(user_input.get('merchant_profile'))}"
     request_body = {
         "model": model,
         "messages": [
@@ -378,13 +454,19 @@ def fixed_benchmark() -> dict[str, Any]:
 
 def clean_generated_result(result: dict[str, Any], payload: DraftRequest) -> dict[str, Any]:
     title = str(result.get("title") or payload.title).strip()
-    body = str(result.get("body") or "").strip()
-    if not body or re.search(r'"title"\s*:|"body"\s*:', body):
-        body = fallback_draft(payload)["body"]
+    fallback = fallback_draft(payload)
+    content_long = str(result.get("content_long") or result.get("body") or "").strip()
+    content_short = str(result.get("content_short") or "").strip()
+    if not content_long or re.search(r'"title"\s*:|"body"\s*:|"content_long"\s*:', content_long):
+        content_long = fallback["content_long"]
+    if not content_short:
+        content_short = fallback["content_short"]
     return {
         **result,
         "title": title,
-        "body": body,
+        "body": content_long,
+        "content_long": content_long,
+        "content_short": content_short,
     }
 
 
@@ -397,16 +479,33 @@ def fallback_draft(payload: DraftRequest) -> dict[str, Any]:
     item_text = "、".join(str(item).strip() for item in signature_items[:3] if str(item).strip()) or "招牌产品"
     point_text = "、".join(str(item).strip() for item in selling_points[:3] if str(item).strip()) or "真实体验"
     place_text = f"在{district}" if district else ""
-    body = (
-        f"先说结论：{store_name}{place_text}这次可以认真种草一下。\n\n"
-        f"如果你最近在看「{payload.title}」，最值得先确认的不是噱头，而是到店后真实体验能不能对上预期。"
-        f"这家比较适合关注{point_text}的人，招牌可以先看{item_text}。\n\n"
-        "建议正文先写一个真实到店场景，再把位置、人均、适合人群、预约或团购规则讲清楚，最后用评论区承接具体问题。\n\n"
-        "发布前再核对一遍：价格是否准确、规则是否过期、有没有夸大承诺、有没有站外导流。"
-    )
+    if payload.style == "style_pro":
+        body = (
+            f"我会把{store_name}{place_text}放进备选清单，主要是因为信息比较适合做一次理性判断。\n\n"
+            f"围绕「{payload.title}」，正文建议先交代位置、人均、营业时间，再写{item_text}的实际体验。"
+            f"主观感受控制在三成左右，重点说明{point_text}，让用户知道适不适合自己。\n\n"
+            "最后补一句预约、团购或到店核销注意事项。这样读起来不像广告，也能帮助真正准备到店的人做决定。"
+        )
+    elif payload.style == "style_contrast":
+        body = (
+            f"本来不想分享{store_name}{place_text}，因为这种店一火真的很难订。\n\n"
+            f"但看完「{payload.title}」这个选题，我反而觉得可以讲清楚：它不是靠噱头赢，而是{point_text}比较稳。"
+            f"{item_text}可以作为第一段钩子，再反问一句：为什么同类店很多，但这家更容易让人想收藏？\n\n"
+            "结尾别说满，留一个悬念给评论区：适合谁、不适合谁、什么时间去体验更好。"
+        )
+    else:
+        body = (
+            f"姐妹们，{store_name}{place_text}这次真的可以认真种草一下！✨\n\n"
+            f"如果你最近在看「{payload.title}」，先别急着被噱头带走，真正重要的是到店后体验能不能对上预期。"
+            f"这家比较打动我的点是{point_text}，招牌可以先看{item_text}，整体会更像真实朋友安利，不像硬广。\n\n"
+            "发的时候建议先写一个到店小场景，再把位置、人均、适合人群和预约/团购规则讲清楚，最后放到评论区承接具体问题～"
+        )
+    short = f"{store_name}{place_text}可围绕「{payload.title}」发一条种草笔记，重点写{item_text}和{point_text}，补充位置、人均、预约或团购规则，适合引导收藏、咨询和到店。"
     return {
         "title": payload.title,
         "body": body,
+        "content_long": body,
+        "content_short": short,
         "tags": ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "周末去哪儿", "收藏备用", "团购套餐", "真实体验"],
         "firstComment": "想看具体位置、价格或预约方式，可以评论区问。",
         "benchmark": fixed_benchmark(),
