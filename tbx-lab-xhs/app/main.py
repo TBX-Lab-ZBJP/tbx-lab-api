@@ -17,6 +17,41 @@ STATIC_DIR = ROOT / "static"
 HUNYUAN_BASE_URL = "https://tokenhub.tencentmaas.com/v1"
 HUNYUAN_MODEL = "hunyuan-2.0-instruct-20251111"
 
+TAG_BANNED_WORDS = ["最", "第一", "独家", "官方", "保证", "绝对", "唯一", "美团", "大众点评", "抖音", "飞猪", "携程", "去哪儿"]
+
+PUBLISH_TIMING_RULES = {
+    "餐饮_午餐": {
+        "weekday": "周二/三 10:30-11:30",
+        "weekend": "周六 10:00-11:00",
+        "reason": "餐饮午餐导向，用户在准备午饭决策时刷小红书最活跃",
+    },
+    "餐饮_晚餐": {
+        "weekday": "周四/五 17:00-18:30",
+        "weekend": "周六 16:30-18:00",
+        "reason": "晚餐决策窗口期",
+    },
+    "餐饮_宵夜": {
+        "weekday": "周四/五 20:30-22:00",
+        "weekend": "周六 21:00-23:00",
+        "reason": "宵夜场景用户晚间活跃",
+    },
+    "酒旅_家庭": {
+        "weekday": "周二/三 20:00-22:00",
+        "weekend": "周日 19:00-21:00",
+        "reason": "用户在规划周末出行时段最活跃",
+    },
+    "酒旅_情侣": {
+        "weekday": "周四 20:00-22:00",
+        "weekend": "周日 20:00-22:00",
+        "reason": "周末出行决策窗口",
+    },
+    "default": {
+        "weekday": "周二/三 20:00-22:00",
+        "weekend": "周日 20:00-22:00",
+        "reason": "晚间是小红书用户活跃高峰",
+    },
+}
+
 RED_LINES = [
     "字节",
     "官方服务商",
@@ -98,6 +133,9 @@ class ScanRequest(BaseModel):
     text: str = ""
     content_long: str = ""
     content_short: str = ""
+    tags_traffic: list[str] = []
+    tags_precise: list[str] = []
+    tags_longtail: list[str] = []
 
 
 def merchant_profile_prompt(profile: dict[str, Any] | None) -> str:
@@ -308,17 +346,20 @@ def variant_anchor(profile: dict[str, Any] | None, lane: str) -> str:
 
 @app.post("/api/v1/xhs/scan")
 def scan(payload: ScanRequest) -> dict[str, Any]:
-    if payload.content_long or payload.content_short:
+    tag_text = " ".join(payload.tags_traffic + payload.tags_precise + payload.tags_longtail)
+    if payload.content_long or payload.content_short or tag_text:
         long_result = scan_text(payload.content_long)
         short_result = scan_text(payload.content_short)
-        terms = list(dict.fromkeys(long_result["risk_terms"] + short_result["risk_terms"]))
+        tag_result = scan_text(tag_text)
+        terms = list(dict.fromkeys(long_result["risk_terms"] + short_result["risk_terms"] + tag_result["risk_terms"]))
         return {
-            "passed": long_result["passed"] and short_result["passed"],
+            "passed": long_result["passed"] and short_result["passed"] and tag_result["passed"],
             "risk_terms": terms,
-            "score": min(long_result["score"], short_result["score"]),
-            "suggestions": ["长短版均需删除命中红线", "改成站内咨询或评论区关键词"] if terms else ["长短版均可进入员工事实审核"],
+            "score": min(long_result["score"], short_result["score"], tag_result["score"]),
+            "suggestions": ["长短版和话题标签均需删除命中红线", "改成站内咨询或评论区关键词"] if terms else ["长短版和话题标签均可进入员工事实审核"],
             "long_result": long_result,
             "short_result": short_result,
+            "tag_result": tag_result,
         }
     return scan_text(payload.text)
 
@@ -337,9 +378,19 @@ async def draft(payload: DraftRequest) -> dict[str, Any]:
     result = clean_generated_result(result, payload)
     result["title"] = result.get("title") or payload.title
     result["firstComment"] = result.get("firstComment") or result.get("first_comment") or "想要结构参考的朋友，评论扣「模板」。"
-    result["tags"] = normalize_tags(result.get("tags"))
+    tag_buckets = normalize_tag_buckets(result, payload)
+    result.update(tag_buckets)
+    result["tags"] = normalize_tags(tag_buckets["tags_traffic"] + tag_buckets["tags_precise"] + tag_buckets["tags_longtail"])
+    result["photo_checklist"] = normalize_photo_checklist(result.get("photo_checklist"), payload)
+    result["publish_timing"] = match_publish_timing(payload.merchant_profile, payload.selected_title or payload.title)
     result["benchmark"] = result.get("benchmark") or fixed_benchmark()
-    result["compliance"] = scan(ScanRequest(content_long=result.get("content_long", ""), content_short=result.get("content_short", "")))
+    result["compliance"] = scan(ScanRequest(
+        content_long=result.get("content_long", ""),
+        content_short=result.get("content_short", ""),
+        tags_traffic=result.get("tags_traffic", []),
+        tags_precise=result.get("tags_precise", []),
+        tags_longtail=result.get("tags_longtail", []),
+    ))
     result["status"] = "employee_review_required"
     result["outputType"] = "标准笔记素材包"
     return result
@@ -369,6 +420,16 @@ content_short: 字符串，短版文案 100-150 字，用于评论区追加、�
 tags: 字符串数组，8 到 12 个标签，不带 # 号
 firstComment: 字符串
 benchmark: 对标参考对象，包含 accounts、notes、usage
+tags 字段升级为三类，请按以下规则分别输出：
+- tags_traffic（流量型）：2-3 个大流量泛话题，如"探店""本地生活""美食推荐"
+- tags_precise（精准型）：2-3 个品类+地域组合，如"{city}{category}""{district}美食"
+- tags_longtail（长尾型）：1-2 个具体场景词，如"一人食""周末去哪儿""适合带娃"
+- tags（兼容旧字段）：以上三类合并为单一数组
+所有标签：不带 # 号；不超过 12 字符；不出现禁用词：最、第一、独家、官方、保证、绝对、唯一；不出现他平台名。
+photo_checklist 字段：根据本篇选题类型和商家品类，生成拍照清单。
+- items：5-9 张图清单，每张包含 order（序号 1-9）、subject（拍什么）、tip（拍摄角度/技巧，一句话）
+- tips：3-5 条通用拍摄口诀
+餐饮重点：门头、招牌菜、餐桌全景、就餐场景、菜单/价签。酒旅重点：门头、房型全景、床品/卫浴/早餐细节、风景/窗景、地段标识。
 安全要求：
 1. 不声称是字节、抖音、小红书官方或官方服务商。
 2. 不承诺 GMV、ROI、爆单、第一、唯一、全网最低。
@@ -452,8 +513,107 @@ def scan_text(text: str) -> dict[str, Any]:
 def normalize_tags(tags: Any) -> list[str]:
     if not isinstance(tags, list):
         return ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "团购套餐", "周末去哪儿", "到店体验", "收藏备用"]
-    clean = [str(tag).strip().lstrip("#") for tag in tags if str(tag).strip()]
+    clean = []
+    for tag in tags:
+        value = clean_tag(tag)
+        if value and value not in clean:
+            clean.append(value)
     return clean[:12] or ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "团购套餐", "周末去哪儿", "到店体验", "收藏备用"]
+
+
+def clean_tag(tag: Any) -> str:
+    value = re.sub(r"\s+", "", str(tag or "").strip().lstrip("#"))
+    if not value or len(value) > 12:
+        return ""
+    if any(word in value for word in TAG_BANNED_WORDS):
+        return ""
+    return value
+
+
+def normalize_tag_list(tags: Any, fallback: list[str], limit: int) -> list[str]:
+    source = tags if isinstance(tags, list) else []
+    clean: list[str] = []
+    for tag in source + fallback:
+        value = clean_tag(tag)
+        if value and value not in clean:
+            clean.append(value)
+        if len(clean) >= limit:
+            break
+    return clean
+
+
+def normalize_tag_buckets(result: dict[str, Any], payload: DraftRequest) -> dict[str, list[str]]:
+    profile = payload.merchant_profile or {}
+    category = str(profile.get("category") or payload.lane or "餐饮").strip()
+    city = str(profile.get("city") or "").strip()
+    district = str(profile.get("district") or "").strip()
+    precise_base = [f"{city}{category}" if city else f"{category}探店", f"{district}美食" if district and category == "餐饮" else f"{district}{category}" if district else "本地生活"]
+    traffic = normalize_tag_list(result.get("tags_traffic"), ["探店", "本地生活", "美食推荐" if category == "餐饮" else "旅行攻略"], 3)
+    precise = normalize_tag_list(result.get("tags_precise"), precise_base, 3)
+    longtail = normalize_tag_list(result.get("tags_longtail"), ["一人食", "周末去哪儿"] if category == "餐饮" else ["周末去哪儿", "适合带娃"], 2)
+    return {"tags_traffic": traffic, "tags_precise": precise, "tags_longtail": longtail}
+
+
+def normalize_photo_checklist(raw: Any, payload: DraftRequest) -> dict[str, Any]:
+    profile = payload.merchant_profile or {}
+    category = str(profile.get("category") or payload.lane or "餐饮")
+    default_items = [
+        {"order": 1, "subject": "门头招牌正面", "tip": "站远一点拍完整店招，画面保持水平"},
+        {"order": 2, "subject": "招牌菜俯拍", "tip": "垂直 90° 拍，留出右下角文字位"},
+        {"order": 3, "subject": "菜品细节特写", "tip": "靠近拍热气、酱汁、切面或拉丝细节"},
+        {"order": 4, "subject": "餐桌全景", "tip": "3-4 个菜品摆盘后斜上 45° 拍"},
+        {"order": 5, "subject": "就餐场景", "tip": "拍朋友夹菜或举杯，突出真实氛围"},
+        {"order": 6, "subject": "菜单/价签", "tip": "拍清价格和套餐信息，避免反光"},
+        {"order": 7, "subject": "店内环境", "tip": "选择自然光位置，避开杂乱背景"},
+    ]
+    if "酒旅" in category:
+        default_items = [
+            {"order": 1, "subject": "门头或楼体入口", "tip": "拍清招牌和入口，方便用户识别"},
+            {"order": 2, "subject": "房型全景", "tip": "站在门口广角拍，床和窗都入镜"},
+            {"order": 3, "subject": "床品细节", "tip": "近景拍枕头、床单、灯光氛围"},
+            {"order": 4, "subject": "卫浴细节", "tip": "保持台面干净，拍清干湿分离"},
+            {"order": 5, "subject": "窗景/风景", "tip": "白天自然光拍，窗框做前景"},
+            {"order": 6, "subject": "早餐或公共区", "tip": "拍出可停留、可放松的场景"},
+            {"order": 7, "subject": "地段标识", "tip": "拍附近地标或路牌，证明位置"},
+        ]
+    default_tips = ["自然光优先，关闭头顶白炽灯", "手机网格线打开，主体放在三分线上", "每个角度多拍 3 张，后期挑最好的"]
+    if not isinstance(raw, dict):
+        return {"items": default_items, "tips": default_tips}
+    items = raw.get("items") if isinstance(raw.get("items"), list) else []
+    tips = raw.get("tips") if isinstance(raw.get("tips"), list) else []
+    normalized_items = []
+    for index, item in enumerate(items[:9], start=1):
+        if not isinstance(item, dict):
+            continue
+        subject = str(item.get("subject") or "").strip()
+        tip = str(item.get("tip") or "").strip()
+        if subject and tip:
+            normalized_items.append({"order": int(item.get("order") or index), "subject": subject, "tip": tip})
+    return {
+        "items": normalized_items if 5 <= len(normalized_items) <= 9 else default_items,
+        "tips": [str(tip).strip() for tip in tips if str(tip).strip()][:5] or default_tips,
+    }
+
+
+def match_publish_timing(merchant_profile: dict[str, Any] | None, selected_title: str) -> dict[str, str]:
+    profile = merchant_profile or {}
+    category = str(profile.get("category") or "").strip()
+    title = str(selected_title or "")
+    key = "default"
+    if "餐饮" in category:
+        if any(word in title for word in ["早餐", "午餐"]):
+            key = "餐饮_午餐"
+        elif any(word in title for word in ["晚餐", "dinner", "Dinner"]):
+            key = "餐饮_晚餐"
+        elif any(word in title for word in ["宵夜", "夜宵", "酒吧"]):
+            key = "餐饮_宵夜"
+    elif "酒旅" in category:
+        if any(word in title for word in ["亲子", "家庭", "带娃"]):
+            key = "酒旅_家庭"
+        elif any(word in title for word in ["情侣", "约会"]):
+            key = "酒旅_情侣"
+    rule = PUBLISH_TIMING_RULES.get(key, PUBLISH_TIMING_RULES["default"])
+    return {"weekday_slot": rule["weekday"], "weekend_slot": rule["weekend"], "reason": rule["reason"]}
 
 
 def fixed_benchmark() -> dict[str, Any]:
@@ -513,12 +673,16 @@ def fallback_draft(payload: DraftRequest) -> dict[str, Any]:
             "发的时候建议先写一个到店小场景，再把位置、人均、适合人群和预约/团购规则讲清楚，最后放到评论区承接具体问题～"
         )
     short = f"{store_name}{place_text}可围绕「{payload.title}」发一条种草笔记，重点写{item_text}和{point_text}，补充位置、人均、预约或团购规则，适合引导收藏、咨询和到店。"
+    tag_buckets = normalize_tag_buckets({}, payload)
     return {
         "title": payload.title,
         "body": body,
         "content_long": body,
         "content_short": short,
-        "tags": ["本地生活", "餐饮探店", "酒旅攻略", "小红书种草", "周末去哪儿", "收藏备用", "团购套餐", "真实体验"],
+        **tag_buckets,
+        "tags": tag_buckets["tags_traffic"] + tag_buckets["tags_precise"] + tag_buckets["tags_longtail"],
+        "photo_checklist": normalize_photo_checklist(None, payload),
+        "publish_timing": match_publish_timing(payload.merchant_profile, payload.selected_title or payload.title),
         "firstComment": "想看具体位置、价格或预约方式，可以评论区问。",
         "benchmark": fixed_benchmark(),
     }

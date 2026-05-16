@@ -553,6 +553,57 @@
     .copy-block.collapsed .content {
       display: none;
     }
+    .material-mini-card {
+      border: 1px solid #e6e6e6;
+      border-radius: 8px;
+      background: #ffffff;
+      margin-top: 12px;
+      overflow: hidden;
+    }
+    .material-mini-card header {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 14px;
+      background: #f8fafc;
+      font-weight: 950;
+    }
+    .material-mini-card .content {
+      padding: 14px;
+      line-height: 1.8;
+    }
+    .tag-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      margin: 6px 0;
+    }
+    .tag-label {
+      min-width: 112px;
+      color: #475467;
+      font-weight: 950;
+    }
+    .tag-pill {
+      display: inline-flex;
+      border-radius: 999px;
+      background: #f2f4f7;
+      color: #3157ff;
+      padding: 3px 8px;
+      font-weight: 900;
+      font-size: 12px;
+      margin: 0 4px 6px 0;
+    }
+    .checklist-item {
+      margin: 8px 0;
+    }
+    .timing-card {
+      display: grid;
+      gap: 6px;
+      color: #475467;
+      font-weight: 800;
+    }
     .mini-btn {
       border: 1px solid #d0d5dd;
       background: #ffffff;
@@ -1139,6 +1190,19 @@
       .copy-block header {
         padding: 10px 12px;
         font-size: 14px;
+      }
+      .material-mini-card header {
+        align-items: flex-start;
+      }
+      .tag-row {
+        display: block;
+      }
+      .tag-label {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .material-mini-card .mini-btn {
+        min-height: 44px;
       }
       .poster-preview {
         padding: 8px;
@@ -1935,6 +1999,9 @@
       const tags = (result.tags || []).map(tag => `#${tag}`).join(" ");
       const longFull = `${result.title || ""}\n\n${longText}\n\n${tags}\n\n置顶评论：${result.firstComment || ""}`;
       const shortFull = shortText || "短版内容生成后显示。";
+      const topicCard = renderTopicTagsCard(result);
+      const checklistCard = renderPhotoChecklistCard(result);
+      const timingCard = renderPublishTimingCard(result);
       const hint = getMerchantProfile()
         ? ""
         : `<div class="muted" style="margin-bottom:12px">💡 完善商家档案可获得更精准的生成结果</div>`;
@@ -1953,11 +2020,109 @@
             <button class="mini-btn" onclick="event.stopPropagation(); copyTextBlock('short')">复制</button>
           </header>
           <div class="content">${escapeHtml(shortFull)}</div>
-        </div>`;
+        </div>
+        ${topicCard}
+        ${checklistCard}
+        ${timingCard}`;
     }
 
     function toggleShortBlock() {
       document.getElementById("shortBlock")?.classList.toggle("collapsed");
+    }
+
+    function getTagBuckets(result = latestOutput || {}) {
+      const tags = Array.isArray(result.tags) ? result.tags : [];
+      return {
+        traffic: Array.isArray(result.tags_traffic) && result.tags_traffic.length ? result.tags_traffic : tags.slice(0, 3),
+        precise: Array.isArray(result.tags_precise) && result.tags_precise.length ? result.tags_precise : tags.slice(3, 6),
+        longtail: Array.isArray(result.tags_longtail) && result.tags_longtail.length ? result.tags_longtail : tags.slice(6, 8)
+      };
+    }
+
+    function renderTagLine(label, tags) {
+      const pills = (tags || []).map(tag => `<span class="tag-pill">#${escapeHtml(tag)}</span>`).join("");
+      return `<div class="tag-row"><span class="tag-label">${label}</span><span>${pills || '<span class="muted">暂无</span>'}</span></div>`;
+    }
+
+    function renderTopicTagsCard(result) {
+      const buckets = getTagBuckets(result);
+      return `<div class="material-mini-card">
+        <header><span>📌 话题标签</span><button class="mini-btn" onclick="copyAllTags()">复制全部标签</button></header>
+        <div class="content">
+          ${renderTagLine("🔥 流量型", buckets.traffic)}
+          ${renderTagLine("🎯 精准型", buckets.precise)}
+          ${renderTagLine("🌱 长尾型", buckets.longtail)}
+        </div>
+      </div>`;
+    }
+
+    function normalizePhotoChecklistClient(result = latestOutput || {}) {
+      const checklist = result.photo_checklist || {};
+      const items = Array.isArray(checklist.items) && checklist.items.length ? checklist.items : [
+        { order: 1, subject: "门头招牌正面", tip: "站远一点拍完整店招，画面保持水平" },
+        { order: 2, subject: "招牌产品主图", tip: "自然光下拍，留出文字位置" },
+        { order: 3, subject: "细节特写", tip: "靠近拍材质、热气或使用痕迹" },
+        { order: 4, subject: "消费场景", tip: "拍出真实到店氛围" },
+        { order: 5, subject: "价格/菜单信息", tip: "拍清关键信息，避免反光" }
+      ];
+      const tips = Array.isArray(checklist.tips) && checklist.tips.length ? checklist.tips : ["自然光优先", "主体放在三分线上", "每个角度多拍 3 张"];
+      return { items, tips };
+    }
+
+    function renderPhotoChecklistCard(result) {
+      const checklist = normalizePhotoChecklistClient(result);
+      const items = checklist.items.map((item, index) => `<div class="checklist-item"><strong>${toChineseIndex(item.order || index + 1)} ${escapeHtml(item.subject || "")}</strong>｜${escapeHtml(item.tip || "")}</div>`).join("");
+      const tips = checklist.tips.map(tip => `<li>${escapeHtml(tip)}</li>`).join("");
+      return `<div class="material-mini-card">
+        <header><span>📸 拍照清单（共 ${checklist.items.length} 张图）</span><button class="mini-btn" onclick="copyPhotoChecklist()">复制清单文本</button></header>
+        <div class="content">
+          ${items}
+          <div style="margin-top:12px"><strong>💡 拍摄口诀</strong><ul>${tips}</ul></div>
+        </div>
+      </div>`;
+    }
+
+    function renderPublishTimingCard(result) {
+      const timing = result.publish_timing || {};
+      return `<div class="material-mini-card">
+        <header><span>📅 推荐发布时间</span></header>
+        <div class="content timing-card">
+          <div>📆 工作日：${escapeHtml(timing.weekday_slot || "周二/三 20:00-22:00")}</div>
+          <div>🎉 周末：${escapeHtml(timing.weekend_slot || "周日 20:00-22:00")}</div>
+          <div>💡 ${escapeHtml(timing.reason || "晚间是小红书用户活跃高峰")}</div>
+        </div>
+      </div>`;
+    }
+
+    function toChineseIndex(value) {
+      const map = ["", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"];
+      return map[Number(value)] || `${value}.`;
+    }
+
+    function buildAllTagsText(result = latestOutput || {}) {
+      const buckets = getTagBuckets(result);
+      return [...buckets.traffic, ...buckets.precise, ...buckets.longtail].filter(Boolean).map(tag => `#${tag}`).join(" ");
+    }
+
+    async function copyAllTags() {
+      const text = buildAllTagsText();
+      if (!text) return alert("暂无标签");
+      await navigator.clipboard.writeText(text);
+      showToast("已复制标签");
+    }
+
+    function buildPhotoChecklistText(result = latestOutput || {}) {
+      const checklist = normalizePhotoChecklistClient(result);
+      const items = checklist.items.map((item, index) => `${toChineseIndex(item.order || index + 1)} ${item.subject}｜${item.tip}`).join("\n");
+      const tips = checklist.tips.map(tip => `• ${tip}`).join("\n");
+      return `📸 拍照清单（${checklist.items.length} 张）\n${items}\n\n💡 拍摄口诀\n${tips}`;
+    }
+
+    async function copyPhotoChecklist() {
+      const text = buildPhotoChecklistText();
+      if (!text) return alert("暂无拍照清单");
+      await navigator.clipboard.writeText(text);
+      showToast("已复制清单");
     }
 
     async function copyTextBlock(type) {
@@ -1989,7 +2154,10 @@
         const result = await apiPost("/api/v1/xhs/scan", {
           text,
           content_long: latestOutput?.content_long || latestOutput?.body || "",
-          content_short: latestOutput?.content_short || ""
+          content_short: latestOutput?.content_short || "",
+          tags_traffic: latestOutput?.tags_traffic || [],
+          tags_precise: latestOutput?.tags_precise || [],
+          tags_longtail: latestOutput?.tags_longtail || []
         });
         renderScanResult(result);
       } catch (error) {
@@ -2005,6 +2173,7 @@
       const suggestions = result.suggestions || [];
       const longResult = result.long_result || result.long || null;
       const shortResult = result.short_result || result.short || null;
+      const tagResult = result.tag_result || null;
       const box = document.getElementById("scanOut");
       box.className = `scan-result-card ${passed ? "pass" : "warn"}`;
       box.innerHTML = `
@@ -2012,6 +2181,7 @@
         <div>${passed ? "未发现内置身份红线、价格红线、效果承诺或站外导流风险。" : `命中风险词：<strong>${terms.map(escapeHtml).join("、") || "需人工复核"}</strong>`}</div>
         ${longResult ? renderScanVersion("长版", longResult) : ""}
         ${shortResult ? renderScanVersion("短版", shortResult) : ""}
+        ${tagResult ? renderScanVersion("话题标签", tagResult) : ""}
         <ul>${(suggestions.length ? suggestions : ["发布前仍需人工复核事实、价格、品牌身份和案例真实性。"]).map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       `;
       saveDraft();
@@ -2027,14 +2197,16 @@
     function scanBothText() {
       const longResult = scanText(latestOutput?.content_long || latestOutput?.body || "");
       const shortResult = scanText(latestOutput?.content_short || "");
-      const merged = Array.from(new Set([...(longResult.risk_terms || []), ...(shortResult.risk_terms || [])]));
+      const tagResult = scanText(buildAllTagsText(latestOutput).replaceAll("#", ""));
+      const merged = Array.from(new Set([...(longResult.risk_terms || []), ...(shortResult.risk_terms || []), ...(tagResult.risk_terms || [])]));
       return {
-        passed: longResult.passed && shortResult.passed,
+        passed: longResult.passed && shortResult.passed && tagResult.passed,
         risk_terms: merged,
-        score: Math.min(longResult.score, shortResult.score),
-        suggestions: merged.length ? ["长短版均需删除命中红线", "改成站内咨询或评论区承接"] : ["长短版均可进入素材产出前确认"],
+        score: Math.min(longResult.score, shortResult.score, tagResult.score),
+        suggestions: merged.length ? ["长短版和话题标签均需删除命中红线", "改成站内咨询或评论区承接"] : ["长短版和话题标签均可进入素材产出前确认"],
         long_result: longResult,
-        short_result: shortResult
+        short_result: shortResult,
+        tag_result: tagResult
       };
     }
 
@@ -2190,15 +2362,18 @@
 
     function buildPublishText() {
       if (!latestOutput) return "";
-      const tags = (latestOutput.tags || []).map(tag => `#${tag}`).join(" ");
+      const tags = buildAllTagsText(latestOutput);
       const longText = latestOutput.content_long || latestOutput.body || "";
       const shortText = latestOutput.content_short || "";
-      return `${latestOutput.title || ""}\n\n${longText}\n\n${tags}\n\n置顶评论：${latestOutput.firstComment || ""}${shortText ? `\n\n短版备用：\n${shortText}` : ""}`;
+      const timing = latestOutput.publish_timing || {};
+      const timingText = `📅 推荐发布时间\n工作日：${timing.weekday_slot || "周二/三 20:00-22:00"}\n周末：${timing.weekend_slot || "周日 20:00-22:00"}`;
+      const checklistText = buildPhotoChecklistText(latestOutput);
+      return `${latestOutput.title || ""}\n\n${longText}\n\n${tags}\n\n置顶评论：${latestOutput.firstComment || ""}\n\n${timingText}\n\n${checklistText}${shortText ? `\n\n短版备用：\n${shortText}` : ""}`;
     }
 
     function buildScanText() {
       if (!latestOutput) return "";
-      return `${latestOutput.content_long || latestOutput.body || ""}\n\n${latestOutput.content_short || ""}`;
+      return `${latestOutput.content_long || latestOutput.body || ""}\n\n${latestOutput.content_short || ""}\n\n${buildAllTagsText(latestOutput)}`;
     }
 
     async function copyPublishText() {
