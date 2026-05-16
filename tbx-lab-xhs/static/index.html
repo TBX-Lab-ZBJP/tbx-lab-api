@@ -333,6 +333,7 @@
       line-height: 1.55;
       font-weight: 800;
       opacity: .86;
+      white-space: pre-line;
     }
     .poster-card-brand {
       position: absolute;
@@ -2420,40 +2421,31 @@
         .slice(0, 18);
     }
 
-    function getPosterCopy(type, index, sentences, profile) {
-      const title = compactPosterLine(latestOutput?.title || document.getElementById("titleSelect")?.selectedOptions?.[0]?.textContent, "这家店值得收藏");
-      const store = compactPosterLine(profile.store_name, "这家店");
-      const category = profile.category || document.getElementById("lane")?.value || "本地生活";
-      const district = compactPosterLine(profile.district || profile.city, "附近");
-      const price = profile.avg_price ? `人均 ${profile.avg_price} 元左右` : "价格先看清楚";
-      const products = Array.isArray(profile.signature_items) && profile.signature_items.length ? profile.signature_items : [];
-      const selling = Array.isArray(profile.selling_points) && profile.selling_points.length ? profile.selling_points : [];
-      const fromText = compactPosterLine(sentences[index] || sentences[index + 1] || title);
-      const product = compactPosterLine(products[index % Math.max(products.length, 1)] || selling[index % Math.max(selling.length, 1)] || fromText, "主推这一款");
-      const reason = compactPosterLine(selling[index % Math.max(selling.length, 1)] || fromText, "舒服、方便、值得来");
-      const map = {
-        cover: { label: "封面", title, sub: `${category}老板可直接参考` },
-        product: { label: "产品主图", title: product, sub: `主推内容：${store}` },
-        detail: { label: "细节图", title: fromText, sub: "放大一个真实细节" },
-        scene: { label: "场景图", title: `${district}适合这样拍`, sub: "把到店场景说清楚" },
-        price: { label: "价格图", title: price, sub: "避免价格信息说不清" },
-        reason: { label: "到店理由", title: reason, sub: "给用户一个收藏理由" },
-        compare: { label: "对比图", title: fromText.includes("不是") ? fromText : "别只看热闹，先看值不值", sub: "用反差提高停留" },
-        review: { label: "口碑图", title: fromText, sub: "更像真实体验，不像硬广" },
-        action: { label: "行动图", title: "先收藏，到店前再看", sub: "发布前确认价格和门店信息" }
+    function getPosterChecklistCopy(index, checklist) {
+      const items = checklist.items || [];
+      const tips = checklist.tips || [];
+      if (index < 8) {
+        const item = items[index] || items[index % Math.max(items.length, 1)] || { subject: "补拍一张真实场景", tip: "自然光下拍清主体，留出文字位置" };
+        return {
+          label: item.subject || `第 ${index + 1} 张`,
+          title: compactPosterLine(item.subject, "补拍真实场景"),
+          sub: item.tip || "自然光下拍清主体，留出文字位置"
+        };
+      }
+      return {
+        label: "拍摄口诀",
+        title: "拍摄口诀",
+        sub: (tips.length ? tips : ["自然光优先", "主体放在三分线上", "多拍几张再筛选"]).map(tip => `• ${tip}`).join("\n")
       };
-      return map[type] || map.cover;
     }
 
     function buildPosterPreviewHtml() {
-      const profile = getMerchantProfile() || {};
       const longText = latestOutput?.content_long || latestOutput?.body || "";
-      const sentences = splitPosterSentences(`${latestOutput?.title || ""}\n${longText}\n${latestOutput?.content_short || ""}`);
+      const checklist = normalizePhotoChecklistClient(latestOutput || {});
       const themes = ["", "light", "warm", "dark", "pink", "green", "", "light", "warm"];
       currentPosterIndex = Math.min(currentPosterIndex, posterTypeState.length - 1);
       const slides = Array.from({ length: 9 }, (_, index) => {
-        const type = posterTypeState[index] || posterTypeOptions[index % posterTypeOptions.length].value;
-        const copy = getPosterCopy(type, index, sentences, profile);
+        const copy = getPosterChecklistCopy(index, checklist);
         const theme = themes[index] || "";
         return `
           <div class="poster-slide">
