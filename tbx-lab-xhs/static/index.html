@@ -697,33 +697,34 @@
         font-weight: 900;
       }
       .progress-bar {
-        padding: 12px 14px 8px;
+        padding: 14px 16px 10px;
         gap: 0;
       }
       .progress-bar::before {
-        top: 18px;
+        left: 14%;
+        right: 14%;
+        top: 26px;
       }
       .progress-step {
-        font-size: 0;
+        font-size: 11px;
+        font-weight: 800;
       }
       .progress-node {
-        width: 8px;
-        height: 8px;
-        border-width: 0;
-        margin-bottom: 0;
-        color: transparent;
+        width: 24px;
+        height: 24px;
+        border-width: 2px;
+        margin-bottom: 4px;
+        font-size: 12px;
+      }
+      .progress-step > div:last-child {
         font-size: 0;
       }
-      .progress-step.current .progress-node,
-      .progress-step.done .progress-node {
-        background: #3157ff;
-      }
+      .progress-step[data-step="collect"] > div:last-child::after { content: "选题"; font-size: 11px; }
+      .progress-step[data-step="write"] > div:last-child::after { content: "文案"; font-size: 11px; }
+      .progress-step[data-step="scan"] > div:last-child::after { content: "扫描"; font-size: 11px; }
+      .progress-step[data-step="review"] > div:last-child::after { content: "审核"; font-size: 11px; }
       .mobile-step-name {
-        display: block;
-        margin: -8px 0 14px;
-        color: #111827;
-        font-size: 18px;
-        font-weight: 950;
+        display: none;
       }
       table, thead, tbody, tr, td {
         display: block;
@@ -760,6 +761,22 @@
         max-width: none;
         margin-left: 0;
         margin-right: 0;
+        flex-wrap: wrap;
+        padding-left: 0;
+        gap: 8px;
+      }
+      .variant-choice span {
+        flex: 0 0 auto;
+        white-space: nowrap;
+      }
+      .variant-choice strong {
+        flex: 1 1 100%;
+        margin-top: 2px;
+        font-weight: 900;
+        line-height: 1.5;
+      }
+      tr td strong {
+        font-weight: 900;
       }
       .modal-backdrop.active {
         align-items: stretch;
