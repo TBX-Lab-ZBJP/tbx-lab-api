@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -650,13 +650,13 @@
               <textarea id="material" placeholder="例：店名、商圈/景区、招牌菜或房型、价格/套餐、停车/预约/核销规则、适合人群、老板想强调的卖点。"></textarea>
             </label>
             <button class="btn" onclick="generate()">生成待审笔记</button>
+            <div class="actions" style="margin-top:14px">
+              <button id="nextScanBtn" class="btn" onclick="goStep('scan')" disabled>进入红线扫描 →</button>
+            </div>
           </div>
           <div class="card">
             <h2>生成结果</h2>
             <div id="copyOut" class="result-box">请先在“选题参考”中勾选标题。</div>
-            <div class="actions" style="margin-top:16px; justify-content:flex-end;">
-              <button id="nextScanBtn" class="btn" onclick="goStep('scan')" disabled>进入红线扫描 →</button>
-            </div>
           </div>
         </div>
       </section>
