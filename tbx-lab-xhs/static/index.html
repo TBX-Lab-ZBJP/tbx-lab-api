@@ -224,14 +224,16 @@
     .variant-toggle {
       border: 0;
       background: transparent;
-      color: #3157ff;
+      color: #111111;
       font-weight: 900;
       cursor: pointer;
       padding: 0;
       margin-top: 6px;
+      text-decoration: underline;
+      text-underline-offset: 3px;
     }
     .variant-row td {
-      background: #fbfcff;
+      background: #fafafa;
       border-bottom-color: #f0f2f5;
     }
     .variant-choice {
@@ -242,7 +244,26 @@
       font-weight: 800;
     }
     .variant-choice.active {
-      color: #3157ff;
+      color: #111111;
+    }
+    .variant-choice input[type="radio"] {
+      accent-color: #111111;
+    }
+    .style-tabs button .dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: transparent;
+      margin-left: 6px;
+      vertical-align: middle;
+      transition: background 0.15s;
+    }
+    .style-tabs button.generated .dot {
+      background: #16a34a;
+    }
+    .style-tabs button.active.generated .dot {
+      background: #ffffff;
     }
     .style-tabs, .version-tabs {
       display: flex;
@@ -614,11 +635,10 @@
               <select id="titleSelect" onchange="handleTitleChange()"></select>
             </label>
             <div class="style-tabs" id="styleTabs">
-              <button class="active" onclick="selectStyle('style_warm')">🌸 亲切</button>
-              <button onclick="selectStyle('style_pro')">📋 专业</button>
-              <button onclick="selectStyle('style_contrast')">💥 反差</button>
+              <button data-style="style_warm" class="active" onclick="selectStyle('style_warm')">🌸 亲切<span class="dot"></span></button>
+              <button data-style="style_pro" onclick="selectStyle('style_pro')">📋 专业<span class="dot"></span></button>
+              <button data-style="style_contrast" onclick="selectStyle('style_contrast')">💥 反差<span class="dot"></span></button>
             </div>
-            <div class="version-tabs" id="versionTabs"></div>
             <label class="field">
               <span>生成类型</span>
               <select id="outputType">
@@ -1113,7 +1133,7 @@
       latestOutput = null;
       latestScanResult = null;
       generatedContents = {};
-      document.getElementById("versionTabs").innerHTML = "";
+      renderStyleTabs();
     }
 
     async function selectStyle(style) {
@@ -1133,7 +1153,9 @@
 
     function renderStyleTabs() {
       document.querySelectorAll("#styleTabs button").forEach(button => {
-        button.classList.toggle("active", button.textContent.trim() === styleLabels[activeStyle]);
+        const styleKey = button.dataset.style;
+        button.classList.toggle("active", styleKey === activeStyle);
+        button.classList.toggle("generated", !!generatedContents[styleKey]);
       });
     }
 
@@ -1195,9 +1217,7 @@
       const hint = getMerchantProfile()
         ? ""
         : `<div class="muted" style="margin-bottom:12px">💡 完善商家档案可获得更精准的生成结果</div>`;
-      document.getElementById("versionTabs").innerHTML = Object.keys(generatedContents).map(style => `
-        <button class="${style === activeStyle ? "active" : ""}" onclick="selectStyle('${style}')">${styleLabels[style]} 已生成</button>
-      `).join("");
+      renderStyleTabs();
       document.getElementById("copyOut").innerHTML = `${hint}
         <div class="copy-block">
           <header>
