@@ -654,6 +654,9 @@
           <div class="card">
             <h2>生成结果</h2>
             <div id="copyOut" class="result-box">请先在“选题参考”中勾选标题。</div>
+            <div class="actions" style="margin-top:16px; justify-content:flex-end;">
+              <button id="nextScanBtn" class="btn" onclick="goStep('scan')" disabled>进入红线扫描 →</button>
+            </div>
           </div>
         </div>
       </section>
@@ -1172,7 +1175,7 @@
         button.disabled = true;
         button.textContent = "正在生成...";
       }
-      document.getElementById("copyOut").textContent = "正在调用腾讯混元生成，请稍等。";
+      document.getElementById("copyOut").textContent = "正在调用特别想-Lab 爆款文案库，请稍等。";
       try {
         const result = await apiPost("/api/v1/xhs/draft", {
           title,
@@ -1192,7 +1195,6 @@
         document.getElementById("scanText").value = buildScanText();
         saveDraft();
         updateProgress();
-        if (advance) goStep("scan");
       } catch (error) {
         document.getElementById("copyOut").textContent = error.message || "文案生成失败";
         alert(error.message || "文案生成失败");
@@ -1205,10 +1207,13 @@
     }
 
     function renderCopy(result) {
+      const nextBtn = document.getElementById("nextScanBtn");
       if (!result) {
         document.getElementById("copyOut").innerHTML = "请选择标题并生成文案。";
+        if (nextBtn) nextBtn.disabled = true;
         return;
       }
+      if (nextBtn) nextBtn.disabled = false;
       const longText = result.content_long || result.body || "";
       const shortText = result.content_short || "";
       const tags = (result.tags || []).map(tag => `#${tag}`).join(" ");
