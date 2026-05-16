@@ -539,7 +539,8 @@
     .mobile-header,
     .mobile-tabbar,
     .mobile-drawer,
-    .mobile-step-name {
+    .mobile-step-name,
+    .mobile-only {
       display: none;
     }
 
@@ -589,6 +590,12 @@
       }
       .top-actions {
         display: none;
+      }
+      .desktop-only {
+        display: none !important;
+      }
+      .mobile-only {
+        display: block;
       }
       .mobile-header {
         position: fixed;
@@ -1029,13 +1036,16 @@
               <textarea id="material" placeholder="例：店名、商圈/景区、招牌菜或房型、价格/套餐、停车/预约/核销规则、适合人群、老板想强调的卖点。"></textarea>
             </label>
             <button class="btn" onclick="generate()">生成待审笔记</button>
-            <div class="actions" style="margin-top:14px">
+            <div class="actions desktop-only" style="margin-top:14px">
               <button id="nextScanBtn" class="btn" onclick="goStep('scan')" disabled>进入红线扫描 →</button>
             </div>
           </div>
           <div class="card">
             <h2>生成结果</h2>
             <div id="copyOut" class="result-box">请先在“选题参考”中勾选标题。</div>
+            <div class="actions mobile-only" style="margin-top:14px">
+              <button id="nextScanBtnMobile" class="btn" onclick="goStep('scan')" disabled>进入红线扫描 →</button>
+            </div>
           </div>
         </div>
       </section>
@@ -1067,7 +1077,7 @@
             <div class="review-list">
               <label>
                 <input id="identityCheck" type="checkbox" onchange="togglePreviewButton()">
-                <span>已确认：文案中未出现字节、官方服务商、公司全称、站外导流或夸大承诺。</span>
+                <span>已确认：文案中未出现站外导流、虚假宣传、过度营销、夸大承诺等可能导致平台限流的风险内容。</span>
               </label>
             </div>
             <button id="previewButton" class="btn secondary" onclick="renderPublishPreview()" disabled>确认内容无误，刷新发布预览</button>
@@ -1604,13 +1614,13 @@
     }
 
     function renderCopy(result) {
-      const nextBtn = document.getElementById("nextScanBtn");
+      const nextButtons = [document.getElementById("nextScanBtn"), document.getElementById("nextScanBtnMobile")].filter(Boolean);
       if (!result) {
         document.getElementById("copyOut").innerHTML = "请选择标题并生成文案。";
-        if (nextBtn) nextBtn.disabled = true;
+        nextButtons.forEach(button => button.disabled = true);
         return;
       }
-      if (nextBtn) nextBtn.disabled = false;
+      nextButtons.forEach(button => button.disabled = false);
       const longText = result.content_long || result.body || "";
       const shortText = result.content_short || "";
       const tags = (result.tags || []).map(tag => `#${tag}`).join(" ");
@@ -1729,7 +1739,7 @@
 
     function renderPublishPreview() {
       if (!document.getElementById("identityCheck").checked) {
-        document.getElementById("reviewHint").textContent = "请先确认未出现字节、官方服务商、公司全称、站外导流或夸大承诺。";
+        document.getElementById("reviewHint").textContent = "请先确认未出现站外导流、虚假宣传、过度营销、夸大承诺等限流风险内容。";
         return;
       }
       if (!latestOutput) {
