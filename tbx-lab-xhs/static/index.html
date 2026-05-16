@@ -295,6 +295,7 @@
       font-size: 13px;
       font-weight: 800;
     }
+    .restore-banner.active { display: flex; }
     .progress-bar {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -750,11 +751,11 @@
 
     function openMerchantModal() {
       setMerchantForm(getMerchantProfile());
-      document.getElementById("merchantModal").classList.add("show");
+      document.getElementById("merchantModal").classList.add("active");
     }
 
     function closeMerchantModal() {
-      document.getElementById("merchantModal").classList.remove("show");
+      document.getElementById("merchantModal").classList.remove("active");
     }
 
     function saveMerchantProfile() {
@@ -782,9 +783,9 @@
     function showToast(message) {
       const toast = document.getElementById("toast");
       toast.textContent = message;
-      toast.classList.add("show");
+      toast.classList.add("active");
       window.clearTimeout(showToast.timer);
-      showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 1800);
+      showToast.timer = window.setTimeout(() => toast.classList.remove("active"), 1800);
     }
 
     function getSelectedTitleIds() {
@@ -818,7 +819,7 @@
         ? `已恢复上次工作进度（${date.toLocaleString()}）`
         : "已恢复上次工作进度";
       document.getElementById("restoreText").textContent = text;
-      document.getElementById("restoreBanner").classList.add("show");
+      document.getElementById("restoreBanner").classList.add("active");
     }
 
     function discardDraft() {
@@ -1120,17 +1121,17 @@
       saveHistory(history);
       latestOutput.__archived = true;
       localStorage.removeItem(DRAFT_KEY);
-      document.getElementById("restoreBanner").classList.remove("show");
+      document.getElementById("restoreBanner").classList.remove("active");
       showToast("已加入历史记录");
     }
 
     function openHistoryModal() {
       renderHistoryList();
-      document.getElementById("historyModal").classList.add("show");
+      document.getElementById("historyModal").classList.add("active");
     }
 
     function closeHistoryModal() {
-      document.getElementById("historyModal").classList.remove("show");
+      document.getElementById("historyModal").classList.remove("active");
     }
 
     function renderHistoryList() {
@@ -1167,11 +1168,11 @@
         `商家信息：${JSON.stringify(item.merchant_snapshot || {}, null, 2)}`
       ].join("\n");
       document.getElementById("historyDetailText").textContent = currentHistoryDetail;
-      document.getElementById("historyDetailModal").classList.add("show");
+      document.getElementById("historyDetailModal").classList.add("active");
     }
 
     function closeHistoryDetailModal() {
-      document.getElementById("historyDetailModal").classList.remove("show");
+      document.getElementById("historyDetailModal").classList.remove("active");
     }
 
     async function copyHistoryDetail() {
