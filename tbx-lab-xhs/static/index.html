@@ -222,6 +222,18 @@
       line-height: 1.8;
       min-height: 140px;
     }
+    /* copyOut 是素材包卡片容器，不需要 result-box 的预格式化和背景 */
+    #copyOut {
+      white-space: normal;
+      background: transparent;
+      border: 0;
+      padding: 0;
+      min-height: 0;
+    }
+    #copyOut:empty::before {
+      content: "请先在「选题参考」中勾选标题。";
+      color: #94a3b8;
+    }
     .poster-preview {
       white-space: normal;
       background: #ffffff;
