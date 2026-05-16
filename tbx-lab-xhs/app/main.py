@@ -66,6 +66,7 @@ class HotTitleRequest(BaseModel):
     platform: str = "小红书"
     lane: str = "餐饮"
     keyword: str = ""
+    merchant_profile: dict[str, Any] | None = None
 
 
 class DraftRequest(BaseModel):
@@ -76,10 +77,33 @@ class DraftRequest(BaseModel):
     lane: str = ""
     keyword: str = ""
     material: str = ""
+    merchant_profile: dict[str, Any] | None = None
 
 
 class ScanRequest(BaseModel):
     text: str = ""
+
+
+def merchant_profile_prompt(profile: dict[str, Any] | None) -> str:
+    if not isinstance(profile, dict) or not profile:
+        return "【商家信息】未提供，请使用本地生活商家的通用口径生成。"
+
+    def clean(value: Any) -> str:
+        if isinstance(value, list):
+            return "、".join(str(item).strip() for item in value if str(item).strip())
+        return str(value or "").strip()
+
+    return f"""
+【商家信息】（如未提供则使用默认值）
+- 店名：{clean(profile.get("store_name")) or "未提供"}
+- 品类：{clean(profile.get("category")) or "未提供"}
+- 城市/商圈：{clean(profile.get("city"))} {clean(profile.get("district"))}
+- 人均：{clean(profile.get("avg_price")) or "未提供"} 元
+- 招牌产品：{clean(profile.get("signature_items")) or "未提供"}
+- 卖点：{clean(profile.get("selling_points")) or "未提供"}
+
+请基于以上商家信息进行个性化生成，将店名、产品名、地点等真实信息融入选题和文案中。
+""".strip()
 
 
 @app.get("/")
@@ -147,6 +171,7 @@ async def generate_hot_titles_with_hunyuan(payload: HotTitleRequest) -> dict[str
 你是本地生活小红书转化型选题策划。目标用户是餐饮/酒旅老板，目标不是泛流量，而是让顾客收藏、咨询、团购点击、预约、核销、到店。
 请基于用户输入的行业、关键词，以及提供的行业爆款标题参考，生成 30 个“小红书本地生活爆款选题参考”。
 注意：这不是实时抓取小红书榜单，不要声称“真实实时数据”。你是在参考池基础上做二次改写。
+如用户提供了商家信息，必须把店名、所在商圈、招牌产品、卖点融入选题中。
 必须输出严格 JSON：
 {
   "items": [
@@ -160,6 +185,8 @@ async def generate_hot_titles_with_hunyuan(payload: HotTitleRequest) -> dict[str
         "keyword": keyword,
         "platform": payload.platform,
         "reference_pool": reference_pool,
+        "merchant_profile": payload.merchant_profile,
+        "merchant_profile_text": merchant_profile_prompt(payload.merchant_profile),
     })
     items = result.get("items", [])
     if not isinstance(items, list) or not items:
@@ -184,12 +211,20 @@ def fallback_hot_titles(payload: HotTitleRequest) -> dict[str, Any]:
     modifiers = ["周末版", "七夕版", "避坑版", "收藏版", "第一次来版", "适合朋友版", "性价比版", "真实体验版"]
     platforms = [payload.platform or "小红书", "抖音"]
     keyword = payload.keyword.strip() or ("新品种草 客单价对比 隐藏菜单" if lane == "餐饮" else "周末亲子房 海边民宿 节日套餐")
+    profile = payload.merchant_profile or {}
+    store_name = str(profile.get("store_name") or "").strip()
+    signature_items = profile.get("signature_items") if isinstance(profile.get("signature_items"), list) else []
+    signature = str(signature_items[0]).strip() if signature_items else ""
     items = []
     for index in range(30):
         base = pool[index % len(pool)]
         title = base["title"]
         if keyword and index % 3 == 0:
             title = f"{keyword.split()[0]}｜{title}"
+        if store_name and index % 5 == 1:
+            title = f"{store_name}怎么发：{title}"
+        if signature and index % 5 == 2:
+            title = f"{signature}种草角度：{title}"
         if index >= len(pool):
             title = f"{title}（{modifiers[index % len(modifiers)]}）"
         items.append({
@@ -257,6 +292,7 @@ benchmark: 对标参考对象，包含 accounts、notes、usage
 正文允许自然使用 5 到 10 个 emoji，但不要每句话都堆。
 不要使用“实时榜单”“真实实时数据”口径，统一使用“爆款选题参考”“行业爆款标题”口径。
 """.strip()
+    system_prompt = f"{system_prompt}\n\n{merchant_profile_prompt(user_input.get('merchant_profile'))}"
     request_body = {
         "model": model,
         "messages": [
@@ -353,10 +389,19 @@ def clean_generated_result(result: dict[str, Any], payload: DraftRequest) -> dic
 
 
 def fallback_draft(payload: DraftRequest) -> dict[str, Any]:
+    profile = payload.merchant_profile or {}
+    store_name = str(profile.get("store_name") or "这家店").strip()
+    district = str(profile.get("district") or "").strip()
+    signature_items = profile.get("signature_items") if isinstance(profile.get("signature_items"), list) else []
+    selling_points = profile.get("selling_points") if isinstance(profile.get("selling_points"), list) else []
+    item_text = "、".join(str(item).strip() for item in signature_items[:3] if str(item).strip()) or "招牌产品"
+    point_text = "、".join(str(item).strip() for item in selling_points[:3] if str(item).strip()) or "真实体验"
+    place_text = f"在{district}" if district else ""
     body = (
-        "先说结论：这条选题不是为了追泛流量，而是为了让真正会到店的人看懂。\n\n"
-        "如果是本地生活商家，最重要的不是把话写得很满，而是把顾客会问的几件事说清楚：位置、价格、适合谁、为什么现在值得来。\n\n"
-        f"围绕「{payload.title}」，建议正文先讲真实场景，再讲选择理由，最后留一个站内评论承接。\n\n"
+        f"先说结论：{store_name}{place_text}这次可以认真种草一下。\n\n"
+        f"如果你最近在看「{payload.title}」，最值得先确认的不是噱头，而是到店后真实体验能不能对上预期。"
+        f"这家比较适合关注{point_text}的人，招牌可以先看{item_text}。\n\n"
+        "建议正文先写一个真实到店场景，再把位置、人均、适合人群、预约或团购规则讲清楚，最后用评论区承接具体问题。\n\n"
         "发布前再核对一遍：价格是否准确、规则是否过期、有没有夸大承诺、有没有站外导流。"
     )
     return {

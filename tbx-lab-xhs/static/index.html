@@ -276,11 +276,161 @@
       line-height: 1.7;
       margin-top: 22px;
     }
+    .top-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .restore-banner {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: -4px 0 14px;
+      padding: 10px 12px;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 13px;
+      font-weight: 800;
+    }
+    .progress-bar {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      align-items: start;
+      gap: 8px;
+      margin: 0 0 16px;
+      padding: 14px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #ffffff;
+      position: relative;
+    }
+    .progress-bar::before {
+      content: "";
+      position: absolute;
+      left: 12.5%;
+      right: 12.5%;
+      top: 29px;
+      height: 2px;
+      background: #e5e7eb;
+      z-index: 0;
+    }
+    .progress-step {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      color: #667085;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .progress-node {
+      display: inline-grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      border: 2px solid #d0d5dd;
+      background: #ffffff;
+      color: #667085;
+      margin-bottom: 6px;
+      font-weight: 950;
+    }
+    .progress-step.current .progress-node,
+    .progress-step.done .progress-node {
+      border-color: #3157ff;
+      background: #3157ff;
+      color: #ffffff;
+    }
+    .history-button {
+      width: 100%;
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,.08);
+      color: #ffffff;
+      font-weight: 900;
+      cursor: pointer;
+      margin-bottom: 12px;
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(17, 24, 39, .56);
+      z-index: 50;
+    }
+    .modal-backdrop.active { display: flex; }
+    .modal {
+      width: min(760px, 100%);
+      max-height: 88vh;
+      overflow: auto;
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 18px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.22);
+    }
+    .modal-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .modal .field { margin-bottom: 0; }
+    .modal .full { grid-column: 1 / -1; }
+    .checkbox-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+    .checkbox-row label {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      font-weight: 800;
+      color: #475467;
+    }
+    .checkbox-row input {
+      width: 16px;
+      min-height: 16px;
+    }
+    .history-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .history-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 10px;
+      align-items: center;
+      padding: 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fafafa;
+    }
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      display: none;
+      padding: 10px 14px;
+      border-radius: 8px;
+      background: #111111;
+      color: #ffffff;
+      font-weight: 900;
+      z-index: 80;
+    }
+    .toast.active { display: block; }
     @media (max-width: 980px) {
       .app { grid-template-columns: 1fr; }
       aside { position: static; height: auto; }
       .side-note { position: static; margin-top: 24px; }
-      .grid-2, .collect-form, .topic-prompts { grid-template-columns: 1fr; }
+      .grid-2, .collect-form, .topic-prompts, .modal-grid { grid-template-columns: 1fr; }
       .topbar { display: block; }
     }
   </style>
@@ -296,6 +446,7 @@
         <button onclick="show('scan', this)">03 红线扫描</button>
         <button onclick="show('review', this)">04 员工审核</button>
       </div>
+      <button class="history-button" onclick="openHistoryModal()">📋 历史记录</button>
       <div class="side-note">内部工具：生成内容仅作为员工审核素材，不自动发布。</div>
     </aside>
 
@@ -305,6 +456,19 @@
           <h1>特别想-Lab小红书素材包生成器</h1>
           <div class="muted">面向餐饮、酒旅本地生活商家：基于行业爆款选题参考库，生成完整的小红书发布素材包。</div>
         </div>
+        <div class="top-actions">
+          <button class="btn ghost" onclick="openMerchantModal()">🏪 商家档案</button>
+        </div>
+      </div>
+      <div id="restoreBanner" class="restore-banner">
+        <span id="restoreText"></span>
+        <button class="btn ghost" onclick="discardDraft()">放弃恢复</button>
+      </div>
+      <div class="progress-bar" id="progressBar">
+        <div class="progress-step" data-step="collect"><div class="progress-node">1</div><div>选题参考</div></div>
+        <div class="progress-step" data-step="write"><div class="progress-node">2</div><div>文案生成</div></div>
+        <div class="progress-step" data-step="scan"><div class="progress-node">3</div><div>红线扫描</div></div>
+        <div class="progress-step" data-step="review"><div class="progress-node">4</div><div>员工审核</div></div>
       </div>
 
       <section id="collect">
@@ -446,11 +610,72 @@
     </main>
   </div>
 
+  <div class="modal-backdrop" id="merchantModal">
+    <div class="modal">
+      <h2>商家档案</h2>
+      <div class="modal-grid">
+        <label class="field"><span>店名 *</span><input id="mpStoreName"></label>
+        <label class="field"><span>品类 *</span><select id="mpCategory"><option>餐饮</option><option>酒旅</option></select></label>
+        <label class="field"><span>城市 *</span><input id="mpCity"></label>
+        <label class="field"><span>商圈/区域 *</span><input id="mpDistrict"></label>
+        <label class="field full"><span>详细地址 *</span><input id="mpAddress"></label>
+        <label class="field"><span>人均价格 *</span><input id="mpAvgPrice" type="number" min="0"></label>
+        <label class="field"><span>营业时间 *</span><input id="mpBusinessHours" placeholder="10:30-22:00"></label>
+        <label class="field full"><span>招牌产品 *（每行一个，最多 5 个）</span><textarea id="mpSignatureItems"></textarea></label>
+        <label class="field full"><span>卖点关键词 *（每行一个，最多 5 个）</span><textarea id="mpSellingPoints"></textarea></label>
+        <div class="field full">
+          <span>团购平台</span>
+          <div class="checkbox-row">
+            <label><input type="checkbox" name="mpPlatform" value="美团">美团</label>
+            <label><input type="checkbox" name="mpPlatform" value="大众点评">大众点评</label>
+            <label><input type="checkbox" name="mpPlatform" value="抖音团购">抖音团购</label>
+          </div>
+        </div>
+        <label class="field full"><span>联系方式（选填）</span><input id="mpContact"></label>
+      </div>
+      <div class="actions" style="margin-top:16px">
+        <button class="btn" onclick="saveMerchantProfile()">保存</button>
+        <button class="btn ghost" onclick="closeMerchantModal()">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="historyModal">
+    <div class="modal">
+      <h2>历史记录</h2>
+      <div id="historyList" class="history-list"></div>
+      <div class="actions" style="margin-top:16px">
+        <button class="btn ghost" onclick="closeHistoryModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="historyDetailModal">
+    <div class="modal">
+      <h2>历史详情</h2>
+      <pre id="historyDetailText"></pre>
+      <div class="actions" style="margin-top:16px">
+        <button class="btn" onclick="copyHistoryDetail()">复制</button>
+        <button class="btn ghost" onclick="closeHistoryDetailModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">已保存</div>
+
   <script>
     const redLines = ["字节", "官方服务商", "官方营销服务商", "威海特别想文化传媒有限公司", "保证GMV", "保证ROI", "全网最低", "第一", "唯一", "扫码", "微信号", "加我微信", "¥998", "¥2,980", "2980"];
+    const PROFILE_KEY = "tbx_merchant_profile";
+    const DRAFT_KEY = "tbx_current_draft";
+    const HISTORY_KEY = "tbx_history";
+    const stepOrder = ["collect", "write", "scan", "review"];
     let hotTitles = [];
     let approvedTitles = [];
     let latestOutput = null;
+    let latestScanResult = null;
+    let currentStep = "collect";
+    let isRestoringDraft = false;
+    let currentHistoryDetail = "";
 
     async function apiPost(path, payload) {
       const response = await fetch(path, {
@@ -463,11 +688,152 @@
       return data;
     }
 
+    function readJson(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch {
+        return fallback;
+      }
+    }
+
+    function writeJson(key, value) {
+      localStorage.setItem(key, JSON.stringify(value));
+    }
+
+    function splitLines(text, limit = 5) {
+      return String(text || "")
+        .split(/\n+/)
+        .map(item => item.trim())
+        .filter(Boolean)
+        .slice(0, limit);
+    }
+
+    function getMerchantProfile() {
+      return readJson(PROFILE_KEY, null);
+    }
+
+    function setMerchantForm(profile) {
+      const data = profile || {};
+      document.getElementById("mpStoreName").value = data.store_name || "";
+      document.getElementById("mpCategory").value = data.category || "餐饮";
+      document.getElementById("mpCity").value = data.city || "";
+      document.getElementById("mpDistrict").value = data.district || "";
+      document.getElementById("mpAddress").value = data.address || "";
+      document.getElementById("mpAvgPrice").value = data.avg_price || "";
+      document.getElementById("mpBusinessHours").value = data.business_hours || "";
+      document.getElementById("mpSignatureItems").value = (data.signature_items || []).join("\n");
+      document.getElementById("mpSellingPoints").value = (data.selling_points || []).join("\n");
+      document.getElementById("mpContact").value = data.contact || "";
+      const platforms = new Set(data.group_buy_platforms || []);
+      document.querySelectorAll('input[name="mpPlatform"]').forEach(input => {
+        input.checked = platforms.has(input.value);
+      });
+    }
+
+    function readMerchantForm() {
+      return {
+        store_name: document.getElementById("mpStoreName").value.trim(),
+        category: document.getElementById("mpCategory").value,
+        city: document.getElementById("mpCity").value.trim(),
+        district: document.getElementById("mpDistrict").value.trim(),
+        address: document.getElementById("mpAddress").value.trim(),
+        avg_price: document.getElementById("mpAvgPrice").value.trim(),
+        business_hours: document.getElementById("mpBusinessHours").value.trim(),
+        signature_items: splitLines(document.getElementById("mpSignatureItems").value),
+        selling_points: splitLines(document.getElementById("mpSellingPoints").value),
+        group_buy_platforms: Array.from(document.querySelectorAll('input[name="mpPlatform"]:checked')).map(input => input.value),
+        contact: document.getElementById("mpContact").value.trim(),
+        updated_at: new Date().toISOString()
+      };
+    }
+
+    function openMerchantModal() {
+      setMerchantForm(getMerchantProfile());
+      document.getElementById("merchantModal").classList.add("show");
+    }
+
+    function closeMerchantModal() {
+      document.getElementById("merchantModal").classList.remove("show");
+    }
+
+    function saveMerchantProfile() {
+      const profile = readMerchantForm();
+      const missing = [];
+      if (!profile.store_name) missing.push("店名");
+      if (!profile.category) missing.push("品类");
+      if (!profile.city) missing.push("城市");
+      if (!profile.district) missing.push("商圈/区域");
+      if (!profile.address) missing.push("详细地址");
+      if (!profile.avg_price) missing.push("人均价格");
+      if (!profile.business_hours) missing.push("营业时间");
+      if (!profile.signature_items.length) missing.push("招牌产品");
+      if (!profile.selling_points.length) missing.push("卖点关键词");
+      if (missing.length) {
+        alert(`请补充：${missing.join("、")}`);
+        return;
+      }
+      writeJson(PROFILE_KEY, profile);
+      showToast("已保存");
+      closeMerchantModal();
+      saveDraft();
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 1800);
+    }
+
+    function getSelectedTitleIds() {
+      return Array.from(document.querySelectorAll(".hotCheck:checked")).map(el => el.value);
+    }
+
+    function buildDraftState() {
+      return {
+        step: currentStep,
+        platform: document.getElementById("platform").value,
+        lane: document.getElementById("lane").value,
+        keyword: document.getElementById("hotKeyword").value,
+        collected_titles: hotTitles,
+        selected_title_ids: getSelectedTitleIds(),
+        generated_content: latestOutput ? buildPublishText() : "",
+        generated_result: latestOutput,
+        scan_result: latestScanResult,
+        merchant_snapshot: getMerchantProfile(),
+        updated_at: new Date().toISOString()
+      };
+    }
+
+    function saveDraft() {
+      if (isRestoringDraft) return;
+      writeJson(DRAFT_KEY, buildDraftState());
+    }
+
+    function showRestoreBanner(updatedAt) {
+      const date = updatedAt ? new Date(updatedAt) : null;
+      const text = date && !Number.isNaN(date.getTime())
+        ? `已恢复上次工作进度（${date.toLocaleString()}）`
+        : "已恢复上次工作进度";
+      document.getElementById("restoreText").textContent = text;
+      document.getElementById("restoreBanner").classList.add("show");
+    }
+
+    function discardDraft() {
+      localStorage.removeItem(DRAFT_KEY);
+      location.reload();
+    }
+
     function show(id, btn) {
       document.querySelectorAll("main section").forEach(section => section.classList.add("hidden"));
       document.getElementById(id).classList.remove("hidden");
       document.querySelectorAll(".nav button").forEach(button => button.classList.remove("active"));
       if (btn) btn.classList.add("active");
+      currentStep = id;
+      updateProgress();
+      saveDraft();
     }
 
     function goStep(id) {
@@ -501,10 +867,13 @@
         const data = await apiPost("/api/v1/xhs/hot-titles", {
           platform: document.getElementById("platform").value,
           lane: document.getElementById("lane").value,
-          keyword: document.getElementById("hotKeyword").value
+          keyword: document.getElementById("hotKeyword").value,
+          merchant_profile: getMerchantProfile()
         });
         hotTitles = data.items || [];
         renderHotRows();
+        saveDraft();
+        updateProgress();
       } catch (error) {
         alert(error.message || "爆款参考标题采集失败");
       } finally {
@@ -518,7 +887,7 @@
     function renderHotRows() {
       const rows = hotTitles.map((item, index) => `
         <tr>
-          <td><input class="hotCheck" type="checkbox" value="${escapeHtml(item.id)}" onchange="updateSelectedCount()"></td>
+          <td><input class="hotCheck" type="checkbox" value="${escapeHtml(item.id)}" onchange="updateSelectedCount(); saveDraft(); updateProgress();"></td>
           <td>${index + 1}</td>
           <td><strong>${escapeHtml(item.title)}</strong><br><span class="muted">${escapeHtml(item.source_style || "")}</span></td>
           <td>${escapeHtml(item.platform || "小红书")}</td>
@@ -533,11 +902,13 @@
     function updateSelectedCount() {
       const count = document.querySelectorAll(".hotCheck:checked").length;
       document.getElementById("approvedCount").textContent = `已选 ${count} 个`;
+      updateProgress();
     }
 
     function clearSelection() {
       document.querySelectorAll(".hotCheck").forEach(el => el.checked = false);
       updateSelectedCount();
+      saveDraft();
     }
 
     function approveTitles() {
@@ -549,6 +920,7 @@
       }
       document.getElementById("titleSelect").innerHTML = approvedTitles.map(item => `<option>${escapeHtml(item.title)}</option>`).join("");
       document.getElementById("approvedCount").textContent = `已入池 ${approvedTitles.length} 个`;
+      saveDraft();
       goStep("write");
     }
 
@@ -572,11 +944,14 @@
           lane: document.getElementById("lane").value,
           keyword: document.getElementById("hotKeyword").value,
           material: document.getElementById("material").value,
-          framework: "避坑警告"
+          framework: "避坑警告",
+          merchant_profile: getMerchantProfile()
         });
         latestOutput = result;
         renderCopy(result);
         document.getElementById("scanText").value = result.body || "";
+        saveDraft();
+        updateProgress();
         goStep("scan");
       } catch (error) {
         document.getElementById("copyOut").textContent = error.message || "文案生成失败";
@@ -592,7 +967,10 @@
     function renderCopy(result) {
       const tags = (result.tags || []).map(tag => `#${tag}`).join(" ");
       const text = `${result.title || ""}\n\n${result.body || ""}\n\n${tags}\n\n置顶评论：${result.firstComment || ""}`;
-      document.getElementById("copyOut").textContent = text;
+      const hint = getMerchantProfile()
+        ? ""
+        : `<div class="muted" style="margin-bottom:12px">💡 完善商家档案可获得更精准的生成结果</div>`;
+      document.getElementById("copyOut").innerHTML = `${hint}<div>${escapeHtml(text).replaceAll("\n", "<br>")}</div>`;
     }
 
     function scanText(text) {
@@ -618,7 +996,8 @@
       }
     }
 
-    function renderScanResult(result) {
+    function renderScanResult(result, advance = true) {
+      latestScanResult = result;
       const passed = !!result.passed;
       const terms = result.risk_terms || result.hits || [];
       const suggestions = result.suggestions || [];
@@ -629,13 +1008,17 @@
         <div>${passed ? "未发现内置身份红线、价格红线、效果承诺或站外导流风险。" : `命中风险词：<strong>${terms.map(escapeHtml).join("、") || "需人工复核"}</strong>`}</div>
         <ul>${(suggestions.length ? suggestions : ["发布前仍需人工复核事实、价格、品牌身份和案例真实性。"]).map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       `;
-      if (latestOutput) goStep("review");
+      saveDraft();
+      updateProgress();
+      if (advance && latestOutput) goStep("review");
     }
 
     function togglePreviewButton() {
       const checked = document.getElementById("identityCheck").checked;
       document.getElementById("previewButton").disabled = !checked;
       document.getElementById("reviewHint").textContent = checked ? "已完成身份红线审核，可以刷新发布预览。" : "请先勾选身份红线审核项。";
+      saveDraft();
+      updateProgress();
     }
 
     function renderPublishPreview() {
@@ -650,6 +1033,7 @@
       const publishText = buildPublishText();
       document.getElementById("publishPreview").textContent = publishText;
       document.getElementById("materialCopyText").textContent = publishText;
+      archiveCurrent();
     }
 
     function buildPublishText() {
@@ -675,6 +1059,189 @@
       a.click();
       URL.revokeObjectURL(url);
     }
+
+    function restoreDraft() {
+      const draft = readJson(DRAFT_KEY, null);
+      if (!draft) return;
+      isRestoringDraft = true;
+      document.getElementById("platform").value = draft.platform || "小红书";
+      document.getElementById("lane").value = draft.lane || "餐饮";
+      document.getElementById("hotKeyword").value = draft.keyword || "";
+      syncTopicPrompts();
+      hotTitles = Array.isArray(draft.collected_titles) ? draft.collected_titles : [];
+      renderHotRows();
+      const selected = new Set(draft.selected_title_ids || []);
+      document.querySelectorAll(".hotCheck").forEach(input => {
+        input.checked = selected.has(input.value);
+      });
+      updateSelectedCount();
+      approvedTitles = hotTitles.filter(item => selected.has(item.id));
+      if (approvedTitles.length) {
+        document.getElementById("titleSelect").innerHTML = approvedTitles.map(item => `<option>${escapeHtml(item.title)}</option>`).join("");
+      }
+      latestOutput = draft.generated_result || null;
+      if (latestOutput) {
+        renderCopy(latestOutput);
+        document.getElementById("scanText").value = latestOutput.body || draft.generated_content || "";
+      } else if (draft.generated_content) {
+        document.getElementById("copyOut").textContent = draft.generated_content;
+        document.getElementById("scanText").value = draft.generated_content;
+      }
+      if (draft.scan_result) {
+        renderScanResult(draft.scan_result, false);
+      }
+      const targetStep = stepOrder.includes(draft.step) ? draft.step : "collect";
+      isRestoringDraft = false;
+      goStep(targetStep);
+      showRestoreBanner(draft.updated_at);
+    }
+
+    function getHistory() {
+      const history = readJson(HISTORY_KEY, []);
+      return Array.isArray(history) ? history : [];
+    }
+
+    function saveHistory(history) {
+      writeJson(HISTORY_KEY, history.slice(-10));
+    }
+
+    function archiveCurrent() {
+      if (!latestOutput || latestOutput.__archived) return;
+      const history = getHistory();
+      const selectedTitle = document.getElementById("titleSelect").value || latestOutput.title || "";
+      history.push({
+        id: crypto?.randomUUID ? crypto.randomUUID() : `history_${Date.now()}`,
+        title: selectedTitle,
+        content: buildPublishText(),
+        scan_result: latestScanResult,
+        merchant_snapshot: getMerchantProfile(),
+        archived_at: new Date().toISOString()
+      });
+      saveHistory(history);
+      latestOutput.__archived = true;
+      localStorage.removeItem(DRAFT_KEY);
+      document.getElementById("restoreBanner").classList.remove("show");
+      showToast("已加入历史记录");
+    }
+
+    function openHistoryModal() {
+      renderHistoryList();
+      document.getElementById("historyModal").classList.add("show");
+    }
+
+    function closeHistoryModal() {
+      document.getElementById("historyModal").classList.remove("show");
+    }
+
+    function renderHistoryList() {
+      const history = getHistory().slice().reverse();
+      const list = document.getElementById("historyList");
+      if (!history.length) {
+        list.innerHTML = `<div class="muted">暂无历史记录。</div>`;
+        return;
+      }
+      list.innerHTML = history.map(item => `
+        <div class="history-item">
+          <div>
+            <strong>${escapeHtml((item.title || "未命名素材包").slice(0, 25))}</strong>
+            <div class="muted">${relativeTime(item.archived_at)}</div>
+          </div>
+          <div class="actions">
+            <button class="btn ghost" onclick="viewHistory('${escapeHtml(item.id)}')">查看</button>
+            <button class="btn" onclick="restoreHistory('${escapeHtml(item.id)}')">恢复到草稿</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function viewHistory(id) {
+      const item = getHistory().find(entry => entry.id === id);
+      if (!item) return;
+      currentHistoryDetail = [
+        `标题：${item.title || ""}`,
+        "",
+        item.content || "",
+        "",
+        `扫描结果：${JSON.stringify(item.scan_result || {}, null, 2)}`,
+        "",
+        `商家信息：${JSON.stringify(item.merchant_snapshot || {}, null, 2)}`
+      ].join("\n");
+      document.getElementById("historyDetailText").textContent = currentHistoryDetail;
+      document.getElementById("historyDetailModal").classList.add("show");
+    }
+
+    function closeHistoryDetailModal() {
+      document.getElementById("historyDetailModal").classList.remove("show");
+    }
+
+    async function copyHistoryDetail() {
+      if (!currentHistoryDetail) return;
+      await navigator.clipboard.writeText(currentHistoryDetail);
+      showToast("已复制");
+    }
+
+    function restoreHistory(id) {
+      const item = getHistory().find(entry => entry.id === id);
+      if (!item) return;
+      writeJson(DRAFT_KEY, {
+        step: "review",
+        platform: "小红书",
+        lane: item.merchant_snapshot?.category || "餐饮",
+        keyword: "",
+        collected_titles: [],
+        selected_title_ids: [],
+        generated_content: item.content || "",
+        generated_result: {
+          title: item.title || "",
+          body: item.content || "",
+          tags: [],
+          firstComment: ""
+        },
+        scan_result: item.scan_result || null,
+        merchant_snapshot: item.merchant_snapshot || null,
+        updated_at: new Date().toISOString()
+      });
+      location.reload();
+    }
+
+    function relativeTime(iso) {
+      const time = new Date(iso).getTime();
+      if (!time) return "";
+      const minutes = Math.max(1, Math.floor((Date.now() - time) / 60000));
+      if (minutes < 60) return `${minutes} 分钟前`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours} 小时前`;
+      return `${Math.floor(hours / 24)} 天前`;
+    }
+
+    function isStepDone(step) {
+      if (step === "collect") return hotTitles.length > 0 && getSelectedTitleIds().length > 0;
+      if (step === "write") return !!(latestOutput && latestOutput.body);
+      if (step === "scan") return !!latestScanResult;
+      if (step === "review") return document.getElementById("identityCheck").checked;
+      return false;
+    }
+
+    function updateProgress() {
+      const currentIndex = stepOrder.indexOf(currentStep);
+      document.querySelectorAll(".progress-step").forEach(stepEl => {
+        const step = stepEl.dataset.step;
+        const index = stepOrder.indexOf(step);
+        const node = stepEl.querySelector(".progress-node");
+        const done = isStepDone(step);
+        stepEl.classList.toggle("current", step === currentStep);
+        stepEl.classList.toggle("done", done && index < currentIndex);
+        node.textContent = done && index < currentIndex ? "✓" : String(index + 1);
+      });
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      restoreDraft();
+      updateProgress();
+      if (!getMerchantProfile()) {
+        openMerchantModal();
+      }
+    });
 
     function escapeHtml(text) {
       return String(text ?? "")
