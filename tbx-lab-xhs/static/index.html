@@ -660,9 +660,17 @@
         line-height: 1;
         transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
       }
+      .mobile-tab:not(.active) .mobile-tab-pill {
+        background: #ffffff !important;
+        color: #3157ff !important;
+        border-color: #3157ff !important;
+        box-shadow: none !important;
+        transform: none !important;
+      }
       .mobile-tab.active .mobile-tab-pill {
-        background: #3157ff;
-        color: #ffffff;
+        background: #3157ff !important;
+        color: #ffffff !important;
+        border-color: #3157ff !important;
         box-shadow: 0 8px 18px rgba(49, 87, 255, 0.28);
         transform: translateY(-2px);
       }
