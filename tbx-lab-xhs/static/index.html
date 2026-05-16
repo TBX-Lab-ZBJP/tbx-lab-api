@@ -652,13 +652,17 @@
         border-radius: 999px;
         display: grid;
         place-items: center;
-        background: #3157ff;
-        color: #ffffff;
+        background: #ffffff;
+        border: 2px solid #3157ff;
+        color: #3157ff;
         font-size: 13px;
         font-weight: 950;
         line-height: 1;
+        transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
       }
       .mobile-tab.active .mobile-tab-pill {
+        background: #3157ff;
+        color: #ffffff;
         box-shadow: 0 8px 18px rgba(49, 87, 255, 0.28);
         transform: translateY(-2px);
       }
