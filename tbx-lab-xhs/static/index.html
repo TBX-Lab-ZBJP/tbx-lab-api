@@ -247,14 +247,6 @@
       display: grid;
       gap: 8px;
     }
-    .poster-type-select {
-      min-height: 36px;
-      padding: 6px 8px;
-      font-size: 12px;
-      border-radius: 999px;
-      border-color: #d0d5dd;
-      background: #ffffff;
-    }
     .poster-card {
       position: relative;
       aspect-ratio: 3 / 4;
@@ -342,6 +334,115 @@
       color: #667085;
       font-size: 12px;
       line-height: 1.7;
+    }
+    .xhs-phone-preview {
+      width: min(430px, 100%);
+      margin: 0 auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 28px;
+      background: #ffffff;
+      overflow: hidden;
+      box-shadow: 0 18px 48px rgba(17, 24, 39, .08);
+    }
+    .xhs-phone-status {
+      display: flex;
+      justify-content: space-between;
+      padding: 16px 22px 8px;
+      color: #667085;
+      font-weight: 950;
+      font-size: 14px;
+    }
+    .xhs-phone-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 20px 16px;
+      color: #667085;
+      font-weight: 950;
+    }
+    .xhs-avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: #111111;
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 950;
+    }
+    .xhs-more {
+      margin-left: auto;
+      letter-spacing: 3px;
+    }
+    .poster-carousel-window {
+      overflow: hidden;
+      touch-action: pan-y;
+      cursor: grab;
+      padding: 0 20px;
+    }
+    .poster-carousel-track {
+      display: flex;
+      transition: transform .24s ease;
+    }
+    .poster-slide {
+      min-width: 100%;
+    }
+    .poster-carousel-window .poster-card {
+      min-height: auto;
+      aspect-ratio: 3 / 4;
+      border-radius: 18px;
+    }
+    .poster-dots {
+      display: flex;
+      justify-content: center;
+      gap: 7px;
+      padding: 14px 0 6px;
+    }
+    .poster-dot {
+      width: 8px;
+      height: 8px;
+      border: 0;
+      border-radius: 999px;
+      background: #d4d4d4;
+      padding: 0;
+      cursor: pointer;
+    }
+    .poster-dot.active {
+      background: #ff2d55;
+    }
+    .xhs-copy-preview {
+      padding: 8px 22px 22px;
+      color: #667085;
+      line-height: 1.75;
+    }
+    .xhs-copy-title {
+      margin-bottom: 10px;
+      color: #667085;
+      font-size: 18px;
+      font-weight: 950;
+      line-height: 1.35;
+    }
+    .xhs-tags {
+      color: #3157ff;
+      margin-top: 12px;
+    }
+    .xhs-comment-bar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      border-top: 1px solid #eeeeee;
+      padding: 12px 18px;
+      color: #667085;
+      font-weight: 800;
+    }
+    .xhs-comment-input {
+      flex: 1;
+      border-radius: 999px;
+      background: #f2f4f7;
+      padding: 8px 14px;
+      color: #98a2b3;
+      font-weight: 500;
     }
     .variant-toggle {
       border: 0;
@@ -1034,6 +1135,21 @@
       .poster-card-title {
         font-size: 32px;
       }
+      .xhs-phone-preview {
+        border-radius: 18px;
+        box-shadow: none;
+      }
+      .poster-carousel-window {
+        padding: 0 12px;
+      }
+      .xhs-copy-preview {
+        padding: 8px 14px 18px;
+      }
+      .xhs-comment-bar {
+        padding: 10px 12px;
+        gap: 8px;
+        font-size: 13px;
+      }
     }
   </style>
 </head>
@@ -1331,6 +1447,8 @@
     let isRestoringDraft = false;
     let currentHistoryDetail = "";
     let posterTypeState = ["cover", "product", "detail", "scene", "price", "reason", "compare", "review", "action"];
+    let currentPosterIndex = 0;
+    let posterTouchStartX = 0;
 
     async function apiPost(path, payload) {
       const response = await fetch(path, {
@@ -1902,11 +2020,27 @@
       { value: "action", label: "行动图", hint: "收藏/到店动作" }
     ];
 
-    function updatePosterType(index, value) {
-      posterTypeState[index] = value;
-      if (latestOutput && document.getElementById("identityCheck").checked) {
-        document.getElementById("publishPreview").innerHTML = buildPosterPreviewHtml();
-      }
+    function goPosterSlide(index) {
+      const total = posterTypeState.length;
+      currentPosterIndex = (index + total) % total;
+      const track = document.getElementById("posterCarouselTrack");
+      if (track) track.style.transform = `translateX(-${currentPosterIndex * 100}%)`;
+      document.querySelectorAll(".poster-dot").forEach((dot, dotIndex) => {
+        dot.classList.toggle("active", dotIndex === currentPosterIndex);
+      });
+      const counter = document.getElementById("posterCounter");
+      if (counter) counter.textContent = `${currentPosterIndex + 1} / ${total}`;
+    }
+
+    function startPosterSwipe(event) {
+      posterTouchStartX = event.touches?.[0]?.clientX ?? event.clientX ?? 0;
+    }
+
+    function endPosterSwipe(event) {
+      const endX = event.changedTouches?.[0]?.clientX ?? event.clientX ?? posterTouchStartX;
+      const distance = endX - posterTouchStartX;
+      if (Math.abs(distance) < 40) return;
+      goPosterSlide(currentPosterIndex + (distance < 0 ? 1 : -1));
     }
 
     function compactPosterLine(text, fallback = "这家值得收藏") {
@@ -1957,16 +2091,13 @@
       const longText = latestOutput?.content_long || latestOutput?.body || "";
       const sentences = splitPosterSentences(`${latestOutput?.title || ""}\n${longText}\n${latestOutput?.content_short || ""}`);
       const themes = ["", "light", "warm", "dark", "pink", "green", "", "light", "warm"];
-      const optionsHtml = posterTypeOptions.map(option => `<option value="${option.value}">${option.label}</option>`).join("");
-      const cards = Array.from({ length: 9 }, (_, index) => {
+      currentPosterIndex = Math.min(currentPosterIndex, posterTypeState.length - 1);
+      const slides = Array.from({ length: 9 }, (_, index) => {
         const type = posterTypeState[index] || posterTypeOptions[index % posterTypeOptions.length].value;
         const copy = getPosterCopy(type, index, sentences, profile);
         const theme = themes[index] || "";
         return `
-          <div class="poster-item">
-            <select class="poster-type-select" onchange="updatePosterType(${index}, this.value)" aria-label="第 ${index + 1} 张图片类型">
-              ${optionsHtml.replace(`value="${type}"`, `value="${type}" selected`)}
-            </select>
+          <div class="poster-slide">
             <div class="poster-card ${theme}">
               <div class="poster-card-label">第 ${index + 1} 张 · ${escapeHtml(copy.label)}</div>
               <div class="poster-card-title">${escapeHtml(copy.title)}</div>
@@ -1975,16 +2106,32 @@
             </div>
           </div>`;
       }).join("");
+      const dots = Array.from({ length: 9 }, (_, index) => `<button class="poster-dot ${index === currentPosterIndex ? "active" : ""}" onclick="goPosterSlide(${index})" aria-label="查看第 ${index + 1} 张"></button>`).join("");
+      const tags = (latestOutput?.tags || []).slice(0, 5).map(tag => `#${escapeHtml(tag)}`).join(" ");
+      const previewParagraphs = splitPosterSentences(longText).slice(0, 4).map(item => `<p>${escapeHtml(item)}。</p>`).join("");
       return `
         <div class="poster-preview">
           <div class="poster-preview-head">
             <div>
-              <strong>9 张大字报图文预览</strong>
-              <div class="muted">根据当前文案自动拆出封面、主图、细节、价格、到店理由等卡片。每张上方可切换图片类型。</div>
+              <strong>小红书真实笔记预览</strong>
+              <div class="muted">9 张大字报图左右滑动查看，下面小红点也可切换。内容根据当前文案自动变化。</div>
             </div>
           </div>
-          <div class="poster-grid">${cards}</div>
-          <div class="poster-note">提示：这里是发布前的图文排版预览，用于指导员工做 9 张小红书图。实际图片仍需替换为商家实拍图、产品主图或细节图。</div>
+          <div class="xhs-phone-preview">
+            <div class="xhs-phone-status"><span>01:08</span><span>▮ ▮ ▮ WiFi 51</span></div>
+            <div class="xhs-phone-head"><span>‹</span><div class="xhs-avatar">TBX</div><span>特别想-Lab</span><span class="xhs-more">•••</span></div>
+            <div class="poster-carousel-window" ontouchstart="startPosterSwipe(event)" ontouchend="endPosterSwipe(event)" onmousedown="startPosterSwipe(event)" onmouseup="endPosterSwipe(event)">
+              <div class="poster-carousel-track" id="posterCarouselTrack" style="transform: translateX(-${currentPosterIndex * 100}%);">${slides}</div>
+            </div>
+            <div class="poster-dots">${dots}</div>
+            <div class="xhs-copy-preview">
+              <div class="xhs-copy-title">${escapeHtml(latestOutput?.title || "发布标题")}</div>
+              ${previewParagraphs || `<p>${escapeHtml(longText || "生成文案后展示正文预览。")}</p>`}
+              <div class="xhs-tags">${tags}</div>
+            </div>
+            <div class="xhs-comment-bar"><div class="xhs-comment-input">说点什么...</div><span>♡ 点赞</span><span>☆ 收藏</span><span>评论</span></div>
+          </div>
+          <div class="poster-note">提示：这是小红书发布前的预览模式，图片卡片用于指导员工制作 9 张图；后续可替换为真实产品主图、细节图、环境图。</div>
         </div>`;
     }
 
