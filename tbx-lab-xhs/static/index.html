@@ -432,6 +432,7 @@
       color: #667085;
       font-size: 12px;
       font-weight: 800;
+      cursor: pointer;
     }
     .progress-node {
       display: inline-grid;
@@ -722,7 +723,7 @@
       .progress-step[data-step="collect"] > div:last-child::after { content: "选题"; font-size: 11px; }
       .progress-step[data-step="write"] > div:last-child::after { content: "文案"; font-size: 11px; }
       .progress-step[data-step="scan"] > div:last-child::after { content: "扫描"; font-size: 11px; }
-      .progress-step[data-step="review"] > div:last-child::after { content: "审核"; font-size: 11px; }
+      .progress-step[data-step="review"] > div:last-child::after { content: "产出"; font-size: 11px; }
       .mobile-step-name {
         display: none;
       }
@@ -779,6 +780,23 @@
       td:first-child::before,
       td:nth-child(2)::before,
       td:nth-child(3)::before {
+        content: "";
+      }
+      tr.empty-row {
+        display: block;
+        grid-template-columns: none;
+        border-left: 4px solid #3157ff;
+      }
+      tr.empty-row > td {
+        display: block;
+        width: 100%;
+        min-height: 160px;
+        white-space: normal;
+        word-break: normal;
+        line-height: 1.8;
+        color: #667085;
+      }
+      tr.empty-row > td::before {
         content: "";
       }
       .variant-row:not(.hidden) {
@@ -877,7 +895,7 @@
     </button>
     <button class="mobile-tab" data-step="review" onclick="show('review', this)">
       <div class="mobile-tab-icon">✅</div>
-      <div class="mobile-tab-label">审核</div>
+      <div class="mobile-tab-label">产出</div>
     </button>
   </nav>
 
@@ -896,15 +914,15 @@
   <div class="app">
     <aside>
       <div class="brand">特别想-Lab<br>小红书素材包生成器</div>
-      <div class="brand-sub">电脑端工作台<br>选题参考 / 标题审核 / 文案生成 / 红线扫描</div>
+      <div class="brand-sub">电脑端工作台<br>选题参考 / 标题确认 / 文案生成 / 红线扫描</div>
       <div class="nav">
         <button class="active" data-step="collect" onclick="show('collect', this)">01 选题参考</button>
         <button data-step="write" onclick="show('write', this)">02 文案生成</button>
         <button data-step="scan" onclick="show('scan', this)">03 红线扫描</button>
-        <button data-step="review" onclick="show('review', this)">04 员工审核</button>
+        <button data-step="review" onclick="show('review', this)">04 素材产出</button>
       </div>
       <button class="history-button" onclick="openHistoryModal()">📋 历史记录</button>
-      <div class="side-note">内部工具：生成内容仅作为员工审核素材，不自动发布。</div>
+      <div class="side-note">内部工具：生成内容仅作为素材产出前素材，不自动发布。</div>
     </aside>
 
     <main>
@@ -922,10 +940,10 @@
         <button class="btn ghost" onclick="discardDraft()">放弃恢复</button>
       </div>
       <div class="progress-bar" id="progressBar">
-        <div class="progress-step" data-step="collect"><div class="progress-node">1</div><div>选题参考</div></div>
-        <div class="progress-step" data-step="write"><div class="progress-node">2</div><div>文案生成</div></div>
-        <div class="progress-step" data-step="scan"><div class="progress-node">3</div><div>红线扫描</div></div>
-        <div class="progress-step" data-step="review"><div class="progress-node">4</div><div>员工审核</div></div>
+        <div class="progress-step" data-step="collect" onclick="goStep('collect')"><div class="progress-node">1</div><div>选题参考</div></div>
+        <div class="progress-step" data-step="write" onclick="goStep('write')"><div class="progress-node">2</div><div>文案生成</div></div>
+        <div class="progress-step" data-step="scan" onclick="goStep('scan')"><div class="progress-node">3</div><div>红线扫描</div></div>
+        <div class="progress-step" data-step="review" onclick="goStep('review')"><div class="progress-node">4</div><div>素材产出</div></div>
       </div>
       <div class="mobile-step-name" id="mobileStepName">01 选题参考</div>
 
@@ -978,7 +996,7 @@
               </tr>
             </thead>
             <tbody id="hotRows">
-              <tr><td colspan="6" class="muted">点击“采集 30 个爆款参考标题”后显示。</td></tr>
+              <tr class="empty-row"><td colspan="6" class="muted">点击“采集 30 个爆款参考标题”后显示。</td></tr>
             </tbody>
           </table>
           <div class="actions" style="margin-top:14px">
@@ -1044,20 +1062,20 @@
       <section id="review" class="hidden">
         <div class="grid grid-2">
           <div class="card">
-            <h2>04 员工审核</h2>
-            <div class="muted">员工复核身份红线、事实信息、价格信息和发布口径。</div>
+            <h2>04 素材产出</h2>
+            <div class="muted">产出前复核身份红线、事实信息、价格信息和发布口径。</div>
             <div class="review-list">
               <label>
                 <input id="identityCheck" type="checkbox" onchange="togglePreviewButton()">
                 <span>已确认：文案中未出现字节、官方服务商、公司全称、站外导流或夸大承诺。</span>
               </label>
             </div>
-            <button id="previewButton" class="btn secondary" onclick="renderPublishPreview()" disabled>确认内容审核无误，刷新发布预览</button>
-            <div id="reviewHint" class="muted" style="margin-top:10px">请先勾选身份红线审核项。</div>
+            <button id="previewButton" class="btn secondary" onclick="renderPublishPreview()" disabled>确认内容无误，刷新发布预览</button>
+            <div id="reviewHint" class="muted" style="margin-top:10px">请先勾选身份红线确认项。</div>
           </div>
           <div class="card">
             <h2>发布预览</h2>
-            <div id="publishPreview" class="preview-box">生成并审核后，这里显示纯文案预览。</div>
+            <div id="publishPreview" class="preview-box">生成并确认后，这里显示纯文案预览。</div>
           </div>
         </div>
 
@@ -1069,11 +1087,11 @@
             <button class="btn ghost" onclick="downloadTextFile('特别想-Lab小红书发布素材包.txt', buildPublishText())">下载文案 TXT</button>
           </div>
           <h3>文案预览</h3>
-          <pre id="materialCopyText">生成并审核后显示。</pre>
+          <pre id="materialCopyText">生成并确认后显示。</pre>
         </div>
       </section>
 
-      <div class="bottom-note">AI 只负责生产辅助。所有标题、文案、价格、案例、门店信息均需员工审核后，才能手动发布。</div>
+      <div class="bottom-note">AI 只负责生产辅助。所有标题、文案、价格、案例、门店信息均需素材产出前确认后，才能手动发布。</div>
     </main>
   </div>
 
@@ -1329,7 +1347,7 @@
       document.querySelectorAll(".mobile-tab").forEach(tab => {
         tab.classList.toggle("active", tab.dataset.step === id);
       });
-      const stepNames = { collect: "01 选题参考", write: "02 文案生成", scan: "03 红线扫描", review: "04 员工审核" };
+      const stepNames = { collect: "01 选题参考", write: "02 文案生成", scan: "03 红线扫描", review: "04 素材产出" };
       const nameEl = document.getElementById("mobileStepName");
       if (nameEl) nameEl.textContent = stepNames[id] || "";
       updateProgress();
@@ -1411,7 +1429,7 @@
         </tr>
         ${renderVariantRows(item)}
       `).join("");
-      document.getElementById("hotRows").innerHTML = rows || `<tr><td colspan="6" class="muted">暂无参考标题。</td></tr>`;
+      document.getElementById("hotRows").innerHTML = rows || `<tr class="empty-row"><td colspan="6" class="muted">暂无参考标题。</td></tr>`;
       updateSelectedCount();
     }
 
@@ -1640,7 +1658,7 @@
         passed: hits.length === 0,
         risk_terms: hits,
         score: Math.max(0, 100 - hits.length * 15),
-        suggestions: hits.length ? ["删除命中红线", "改成评论区关键词或站内咨询"] : ["可进入员工事实审核"]
+        suggestions: hits.length ? ["删除命中红线", "改成评论区关键词或站内咨询"] : ["可进入素材产出前确认"]
       };
     }
 
@@ -1695,7 +1713,7 @@
         passed: longResult.passed && shortResult.passed,
         risk_terms: merged,
         score: Math.min(longResult.score, shortResult.score),
-        suggestions: merged.length ? ["长短版均需删除命中红线", "改成站内咨询或评论区承接"] : ["长短版均可进入员工事实审核"],
+        suggestions: merged.length ? ["长短版均需删除命中红线", "改成站内咨询或评论区承接"] : ["长短版均可进入素材产出前确认"],
         long_result: longResult,
         short_result: shortResult
       };
@@ -1704,7 +1722,7 @@
     function togglePreviewButton() {
       const checked = document.getElementById("identityCheck").checked;
       document.getElementById("previewButton").disabled = !checked;
-      document.getElementById("reviewHint").textContent = checked ? "已完成身份红线审核，可以刷新发布预览。" : "请先勾选身份红线审核项。";
+      document.getElementById("reviewHint").textContent = checked ? "已完成身份红线确认，可以刷新发布预览。" : "请先勾选身份红线确认项。";
       saveDraft();
       updateProgress();
     }
