@@ -11,6 +11,7 @@
       font-family: "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", Arial, sans-serif;
       background: #f6f7f9;
       color: #111827;
+      overflow-x: hidden;
     }
     .app {
       display: grid;
@@ -797,6 +798,16 @@
       .card {
         padding: 14px;
         margin-bottom: 12px;
+        min-width: 0;
+      }
+      section,
+      .grid,
+      .grid-2,
+      .preview-box,
+      .material-pack {
+        min-width: 0;
+        max-width: 100%;
+        overflow-x: hidden;
       }
       input, textarea, select {
         font-size: 16px;
@@ -1130,7 +1141,9 @@
         font-size: 14px;
       }
       .poster-preview {
-        padding: 12px;
+        padding: 8px;
+        max-width: 100%;
+        overflow: hidden;
       }
       .poster-preview-head {
         display: block;
@@ -1145,12 +1158,20 @@
         font-size: 32px;
       }
       .xhs-phone-preview {
+        width: min(300px, 100%);
+        max-width: 100%;
         border-radius: 18px;
         box-shadow: none;
       }
       .poster-carousel-window {
-        width: calc(100% - 24px);
+        width: calc(100% - 16px);
         padding: 0;
+      }
+      .xhs-phone-status,
+      .xhs-phone-head,
+      .xhs-copy-preview,
+      .xhs-comment-bar {
+        max-width: 100%;
       }
       .xhs-copy-preview {
         padding: 8px 14px 18px;
@@ -1159,6 +1180,13 @@
         padding: 10px 12px;
         gap: 8px;
         font-size: 13px;
+        flex-wrap: nowrap;
+      }
+      .xhs-comment-input {
+        min-width: 0;
+      }
+      .xhs-comment-bar span {
+        white-space: nowrap;
       }
     }
   </style>
