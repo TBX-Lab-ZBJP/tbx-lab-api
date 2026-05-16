@@ -639,21 +639,28 @@
         flex: 1;
         border: 0;
         background: transparent;
-        color: #667085;
         font-weight: 900;
         min-height: 60px;
         cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
-      .mobile-tab.active {
-        color: #3157ff;
+      .mobile-tab-pill {
+        width: 46px;
+        height: 46px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: #3157ff;
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 950;
+        line-height: 1;
       }
-      .mobile-tab-icon {
-        font-size: 18px;
-        line-height: 1.2;
-      }
-      .mobile-tab-label {
-        font-size: 11px;
-        margin-top: 2px;
+      .mobile-tab.active .mobile-tab-pill {
+        box-shadow: 0 8px 18px rgba(49, 87, 255, 0.28);
+        transform: translateY(-2px);
       }
       .mobile-drawer.active {
         position: fixed;
@@ -889,20 +896,16 @@
 
   <nav class="mobile-tabbar" id="mobileTabbar">
     <button class="mobile-tab active" data-step="collect" onclick="show('collect', this)">
-      <div class="mobile-tab-icon">📋</div>
-      <div class="mobile-tab-label">选题</div>
+      <span class="mobile-tab-pill">选题</span>
     </button>
     <button class="mobile-tab" data-step="write" onclick="show('write', this)">
-      <div class="mobile-tab-icon">✍️</div>
-      <div class="mobile-tab-label">文案</div>
+      <span class="mobile-tab-pill">文案</span>
     </button>
     <button class="mobile-tab" data-step="scan" onclick="show('scan', this)">
-      <div class="mobile-tab-icon">🛡️</div>
-      <div class="mobile-tab-label">扫描</div>
+      <span class="mobile-tab-pill">扫描</span>
     </button>
     <button class="mobile-tab" data-step="review" onclick="show('review', this)">
-      <div class="mobile-tab-icon">✅</div>
-      <div class="mobile-tab-label">产出</div>
+      <span class="mobile-tab-pill">产出</span>
     </button>
   </nav>
 
