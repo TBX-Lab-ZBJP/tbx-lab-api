@@ -52,6 +52,34 @@ PUBLISH_TIMING_RULES = {
     },
 }
 
+PRIVATE_MESSAGE_TEMPLATES = {
+    "餐饮": [
+        {"question": "营业时间？", "template": "我们 {business_hours} 营业，最后入座提前半小时哦"},
+        {"question": "在哪？/位置？", "template": "我们在 {address}，附近有公共停车场"},
+        {"question": "人均多少？", "template": "一般人均 {avg_price}，多人去点招牌套餐性价比最高"},
+        {"question": "需要预约吗？", "template": "周末建议提前 1 天预约，工作日直接来即可"},
+        {"question": "有团购吗？", "template": "常用团购平台都能搜到我们店名"},
+        {"question": "停车方便吗？", "template": "周边有公共停车场，周末建议早点来"},
+        {"question": "新客有优惠吗？", "template": "进群可以领新人券，扫桌面二维码即可"},
+        {"question": "适合带小孩/老人？", "template": "有儿童椅，菜品可备少辣或清淡口味"},
+    ],
+    "酒旅": [
+        {"question": "怎么预订？", "template": "可以直接私信选房型，我们帮您锁定"},
+        {"question": "位置？", "template": "我们在 {address}，距离 {district} 商圈步行 X 分钟"},
+        {"question": "房价？", "template": "平日 X 元起，周末/节假日略有上浮"},
+        {"question": "可以提前入住吗？", "template": "标准入住 15:00 起，可提前联系，按当天排房情况安排"},
+        {"question": "退房时间？", "template": "标准退房 12:00 前，需要延迟可提前 1 小时跟前台说"},
+        {"question": "停车？", "template": "酒店配套停车场，含在房价内"},
+        {"question": "有早餐吗？", "template": "含中式自助早餐，07:30-10:00 供应"},
+        {"question": "周边游玩？", "template": "前台有手绘地图，可推荐附近 1km 内的景点和小馆"},
+    ],
+    "default": [
+        {"question": "营业时间？", "template": "我们 {business_hours} 营业"},
+        {"question": "位置？", "template": "我们在 {address}"},
+        {"question": "怎么预约？", "template": "私信留下时间和人数即可"},
+    ],
+}
+
 RED_LINES = [
     "字节",
     "官方服务商",
@@ -136,6 +164,7 @@ class ScanRequest(BaseModel):
     tags_traffic: list[str] = []
     tags_precise: list[str] = []
     tags_longtail: list[str] = []
+    engagement_comments: list[Any] = []
 
 
 def merchant_profile_prompt(profile: dict[str, Any] | None) -> str:
@@ -346,20 +375,31 @@ def variant_anchor(profile: dict[str, Any] | None, lane: str) -> str:
 
 @app.post("/api/v1/xhs/scan")
 def scan(payload: ScanRequest) -> dict[str, Any]:
+    comment_text = " ".join(
+        str(item.get("text") if isinstance(item, dict) else item or "").strip()
+        for item in payload.engagement_comments
+    )
     tag_text = " ".join(payload.tags_traffic + payload.tags_precise + payload.tags_longtail)
-    if payload.content_long or payload.content_short or tag_text:
+    if payload.content_long or payload.content_short or tag_text or comment_text:
         long_result = scan_text(payload.content_long)
         short_result = scan_text(payload.content_short)
         tag_result = scan_text(tag_text)
-        terms = list(dict.fromkeys(long_result["risk_terms"] + short_result["risk_terms"] + tag_result["risk_terms"]))
+        comment_result = scan_text(comment_text)
+        terms = list(dict.fromkeys(
+            long_result["risk_terms"]
+            + short_result["risk_terms"]
+            + tag_result["risk_terms"]
+            + comment_result["risk_terms"]
+        ))
         return {
-            "passed": long_result["passed"] and short_result["passed"] and tag_result["passed"],
+            "passed": long_result["passed"] and short_result["passed"] and tag_result["passed"] and comment_result["passed"],
             "risk_terms": terms,
-            "score": min(long_result["score"], short_result["score"], tag_result["score"]),
-            "suggestions": ["长短版和话题标签均需删除命中红线", "改成站内咨询或评论区关键词"] if terms else ["长短版和话题标签均可进入员工事实审核"],
+            "score": min(long_result["score"], short_result["score"], tag_result["score"], comment_result["score"]),
+            "suggestions": ["长短版、话题标签和评论区话术均需删除命中红线", "改成站内咨询或评论区承接"] if terms else ["长短版、话题标签和评论区话术均可进入素材产出前确认"],
             "long_result": long_result,
             "short_result": short_result,
             "tag_result": tag_result,
+            "comment_result": comment_result,
         }
     return scan_text(payload.text)
 
@@ -383,6 +423,8 @@ async def draft(payload: DraftRequest) -> dict[str, Any]:
     result["tags"] = normalize_tags(tag_buckets["tags_traffic"] + tag_buckets["tags_precise"] + tag_buckets["tags_longtail"])
     result["photo_checklist"] = normalize_photo_checklist(result.get("photo_checklist"), payload)
     result["publish_timing"] = match_publish_timing(payload.merchant_profile, payload.selected_title or payload.title)
+    result["engagement_comments"] = normalize_engagement_comments(result.get("engagement_comments"), payload)
+    result["private_messages"] = render_private_messages(payload.merchant_profile)
     result["benchmark"] = result.get("benchmark") or fixed_benchmark()
     result["compliance"] = scan(ScanRequest(
         content_long=result.get("content_long", ""),
@@ -390,6 +432,7 @@ async def draft(payload: DraftRequest) -> dict[str, Any]:
         tags_traffic=result.get("tags_traffic", []),
         tags_precise=result.get("tags_precise", []),
         tags_longtail=result.get("tags_longtail", []),
+        engagement_comments=result.get("engagement_comments", []),
     ))
     result["status"] = "employee_review_required"
     result["outputType"] = "标准笔记素材包"
@@ -441,7 +484,13 @@ photo_checklist 字段：根据本篇选题类型和商家品类，生成拍照�
 不要使用“实时榜单”“真实实时数据”口径，统一使用“爆款选题参考”“行业爆款标题”口径。
 短版要求：保留长版的核心钩子和到店动作，删除铺垫和情绪渲染，适合作为评论区补充信息或私信发送。
 """.strip()
-    system_prompt = f"{system_prompt}\n\n【当前文案风格】\n{style_prompts.get(style, style_prompts['style_warm'])}\n\n{merchant_profile_prompt(user_input.get('merchant_profile'))}"
+    engagement_prompt = """
+engagement_comments 字段：为本篇笔记生成 5-10 条评论区埋点话术，让商家用员工号/小号在评论区先发，引导真实用户互动。
+按以下 3 类分配：type_question 提问引导型 2-3 条；type_answer 自答信息型 2-4 条；type_engage 情绪互动型 2-3 条。
+输出结构示例："engagement_comments":[{"type":"type_question","text":"请问周末几点开门？想带家人去"}]
+要求：每条 8-30 字；模拟不同口吻；不能出现禁用词；不能直接复制文案原句；不能提及具体他平台名（美团/大众点评/抖音团购等）。
+""".strip()
+    system_prompt = f"{system_prompt}\n\n{engagement_prompt}\n\n【当前文案风格】\n{style_prompts.get(style, style_prompts['style_warm'])}\n\n{merchant_profile_prompt(user_input.get('merchant_profile'))}"
     request_body = {
         "model": model,
         "messages": [
@@ -616,6 +665,76 @@ def match_publish_timing(merchant_profile: dict[str, Any] | None, selected_title
     return {"weekday_slot": rule["weekday"], "weekend_slot": rule["weekend"], "reason": rule["reason"]}
 
 
+COMMENT_TYPES = ("type_question", "type_answer", "type_engage")
+
+
+def has_banned_text(text: str) -> bool:
+    return any(word in text for word in TAG_BANNED_WORDS + ["扫码", "微信号", "加微信", "美团", "大众点评", "抖音团购"])
+
+
+def fallback_engagement_comments(payload: DraftRequest) -> list[dict[str, str]]:
+    profile = payload.merchant_profile or {}
+    district = str(profile.get("district") or profile.get("city") or "附近").strip()
+    items = profile.get("signature_items") if isinstance(profile.get("signature_items"), list) else []
+    signature = str(items[0]).strip() if items else "招牌款"
+    return [
+        {"type": "type_question", "text": "周末去会不会排队呀"},
+        {"type": "type_question", "text": f"{signature}适合第一次点吗"},
+        {"type": "type_answer", "text": f"位置在{district}，到店前看清门头"},
+        {"type": "type_answer", "text": "营业时间建议先看店内公告"},
+        {"type": "type_answer", "text": "价格按实际点单和日期为准"},
+        {"type": "type_engage", "text": "这种真实体验比硬广有用"},
+        {"type": "type_engage", "text": "收藏了，下次路过想试试"},
+    ]
+
+
+def normalize_engagement_comments(raw: Any, payload: DraftRequest) -> list[dict[str, str]]:
+    source = raw if isinstance(raw, list) else []
+    clean: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in source + fallback_engagement_comments(payload):
+        if not isinstance(item, dict):
+            continue
+        comment_type = str(item.get("type") or "").strip()
+        text = re.sub(r"\s+", " ", str(item.get("text") or "").strip())
+        if comment_type not in COMMENT_TYPES or not text or text in seen or has_banned_text(text):
+            continue
+        clean.append({"type": comment_type, "text": text[:40]})
+        seen.add(text)
+        if len(clean) >= 10:
+            break
+    return clean
+
+
+def template_value(profile: dict[str, Any], key: str) -> str:
+    value = profile.get(key)
+    if isinstance(value, list):
+        text = "、".join(str(item).strip() for item in value if str(item).strip())
+        return text or "{" + key + "}"
+    text = str(value or "").strip()
+    return text or "{" + key + "}"
+
+
+def render_private_messages(merchant_profile: dict[str, Any] | None) -> list[dict[str, str]]:
+    profile = merchant_profile or {}
+    category = str(profile.get("category") or "").strip()
+    templates = PRIVATE_MESSAGE_TEMPLATES.get(category) or PRIVATE_MESSAGE_TEMPLATES["default"]
+    values = {
+        "business_hours": template_value(profile, "business_hours"),
+        "address": template_value(profile, "address"),
+        "avg_price": template_value(profile, "avg_price"),
+        "district": template_value(profile, "district"),
+        "signature_items": template_value(profile, "signature_items"),
+    }
+    messages = []
+    for item in templates:
+        template = str(item.get("template") or "")
+        for key, value in values.items():
+            template = template.replace("{" + key + "}", value)
+        messages.append({"question": str(item.get("question") or ""), "message": template})
+    return messages
+
+
 def fixed_benchmark() -> dict[str, Any]:
     return {
         "accounts": ["本地生活真实体验号", "餐饮酒旅种草号"],
@@ -683,6 +802,8 @@ def fallback_draft(payload: DraftRequest) -> dict[str, Any]:
         "tags": tag_buckets["tags_traffic"] + tag_buckets["tags_precise"] + tag_buckets["tags_longtail"],
         "photo_checklist": normalize_photo_checklist(None, payload),
         "publish_timing": match_publish_timing(payload.merchant_profile, payload.selected_title or payload.title),
+        "engagement_comments": fallback_engagement_comments(payload),
+        "private_messages": render_private_messages(payload.merchant_profile),
         "firstComment": "想看具体位置、价格或预约方式，可以评论区问。",
         "benchmark": fixed_benchmark(),
     }

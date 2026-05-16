@@ -573,6 +573,39 @@
       padding: 14px;
       line-height: 1.8;
     }
+    .material-mini-card .content > :first-child { margin-top: 0; }
+    .material-mini-card .content > :last-child { margin-bottom: 0; }
+    .material-mini-card ul {
+      margin: 6px 0 0;
+      padding-left: 18px;
+    }
+    .comment-group {
+      margin: 10px 0 0;
+    }
+    .comment-group-title {
+      color: #475467;
+      font-weight: 950;
+      margin-bottom: 4px;
+    }
+    .pm-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 6px 10px;
+      padding: 10px 0;
+      border-top: 1px solid #eeeeee;
+    }
+    .pm-row:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+    .pm-question {
+      font-weight: 950;
+    }
+    .pm-answer {
+      grid-column: 1 / -1;
+      color: #475467;
+      padding-left: 12px;
+    }
     .tag-row {
       display: flex;
       gap: 8px;
@@ -1465,6 +1498,7 @@
           <div class="actions" style="margin:14px 0">
             <button class="btn" onclick="copyPublishText()">复制发布文案</button>
             <button class="btn ghost" onclick="downloadTextFile('特别想-Lab小红书发布素材包.txt', buildPublishText())">下载文案 TXT</button>
+            <button class="btn ghost" onclick="downloadMarkdownFile()">导出 .md 文件</button>
           </div>
           <h3>文案预览</h3>
           <pre id="materialCopyText">生成并确认后显示。</pre>
@@ -2002,6 +2036,8 @@
       const topicCard = renderTopicTagsCard(result);
       const checklistCard = renderPhotoChecklistCard(result);
       const timingCard = renderPublishTimingCard(result);
+      const commentsCard = renderEngagementCommentsCard(result);
+      const privateCard = renderPrivateMessagesCard(result);
       const hint = getMerchantProfile()
         ? ""
         : `<div class="muted" style="margin-bottom:12px">💡 完善商家档案可获得更精准的生成结果</div>`;
@@ -2023,7 +2059,9 @@
         </div>
         ${topicCard}
         ${checklistCard}
-        ${timingCard}`;
+        ${timingCard}
+        ${commentsCard}
+        ${privateCard}`;
     }
 
     function toggleShortBlock() {
@@ -2094,6 +2132,100 @@
       </div>`;
     }
 
+    function getEngagementGroups(result = latestOutput || {}) {
+      const comments = Array.isArray(result.engagement_comments) ? result.engagement_comments : [];
+      return {
+        type_question: comments.filter(item => item.type === "type_question"),
+        type_answer: comments.filter(item => item.type === "type_answer"),
+        type_engage: comments.filter(item => item.type === "type_engage")
+      };
+    }
+
+    function renderCommentGroup(label, comments) {
+      const list = (comments || []).map(item => `<li>${escapeHtml(item.text || "")}</li>`).join("");
+      return `<div class="comment-group">
+        <div class="comment-group-title">${label}（${comments.length}）</div>
+        <ul>${list || "<li>暂无</li>"}</ul>
+      </div>`;
+    }
+
+    function renderEngagementCommentsCard(result) {
+      const groups = getEngagementGroups(result);
+      const total = Object.values(groups).reduce((sum, list) => sum + list.length, 0);
+      return `<div class="material-mini-card">
+        <header><span>💬 评论区话术（共 ${total} 条）</span><button class="mini-btn" onclick="copyEngagementComments()">复制全部</button></header>
+        <div class="content">
+          ${renderCommentGroup("❓ 提问引导型", groups.type_question)}
+          ${renderCommentGroup("💡 自答信息型", groups.type_answer)}
+          ${renderCommentGroup("😍 情绪互动型", groups.type_engage)}
+        </div>
+      </div>`;
+    }
+
+    function buildEngagementCommentsText(result = latestOutput || {}) {
+      const groups = getEngagementGroups(result);
+      const lines = ["💬 评论区话术（共 " + Object.values(groups).reduce((sum, list) => sum + list.length, 0) + " 条）", ""];
+      [
+        ["❓ 提问引导型", groups.type_question],
+        ["💡 自答信息型", groups.type_answer],
+        ["😍 情绪互动型", groups.type_engage]
+      ].forEach(([label, comments]) => {
+        lines.push(label);
+        (comments || []).forEach(item => lines.push(`• ${item.text || ""}`));
+        lines.push("");
+      });
+      return lines.join("\n").trim();
+    }
+
+    async function copyEngagementComments() {
+      const text = buildEngagementCommentsText();
+      if (!text) return alert("暂无评论区话术");
+      await navigator.clipboard.writeText(text);
+      showToast("已复制评论区话术");
+    }
+
+    function normalizePrivateMessages(result = latestOutput || {}) {
+      return Array.isArray(result.private_messages) ? result.private_messages : [];
+    }
+
+    function renderPrivateMessagesCard(result) {
+      const messages = normalizePrivateMessages(result);
+      const profile = getMerchantProfile();
+      const hint = profile ? "" : `<div class="muted" style="margin-bottom:10px">💡 完善商家档案，私信模板会自动填充门店信息</div>`;
+      const rows = messages.map((item, index) => `<div class="pm-row">
+        <div class="pm-question">${escapeHtml(item.question || "")}</div>
+        <button class="mini-btn" onclick="copyPrivateMessage(${index})">复制</button>
+        <div class="pm-answer">└ ${escapeHtml(item.message || "")}</div>
+      </div>`).join("");
+      return `<div class="material-mini-card">
+        <header><span>📩 私信模板</span><button class="mini-btn" onclick="copyAllPrivateMessages()">复制全部</button></header>
+        <div class="content">
+          ${hint}
+          ${rows || '<div class="muted">暂无私信模板。</div>'}
+        </div>
+      </div>`;
+    }
+
+    function buildPrivateMessagesText(result = latestOutput || {}) {
+      const messages = normalizePrivateMessages(result);
+      if (!messages.length) return "📩 私信回复模板\n暂无";
+      return ["📩 私信回复模板", "", ...messages.flatMap(item => [item.question || "", item.message || "", ""])].join("\n").trim();
+    }
+
+    async function copyPrivateMessage(index) {
+      const item = normalizePrivateMessages()[index];
+      if (!item) return;
+      await navigator.clipboard.writeText(item.message || "");
+      showToast("已复制私信模板");
+    }
+
+    async function copyAllPrivateMessages() {
+      const text = buildPrivateMessagesText();
+      if (!text) return alert("暂无私信模板");
+      await navigator.clipboard.writeText(text);
+      showToast("已复制全部私信模板");
+    }
+
     function toChineseIndex(value) {
       const map = ["", "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"];
       return map[Number(value)] || `${value}.`;
@@ -2157,7 +2289,8 @@
           content_short: latestOutput?.content_short || "",
           tags_traffic: latestOutput?.tags_traffic || [],
           tags_precise: latestOutput?.tags_precise || [],
-          tags_longtail: latestOutput?.tags_longtail || []
+          tags_longtail: latestOutput?.tags_longtail || [],
+          engagement_comments: latestOutput?.engagement_comments || []
         });
         renderScanResult(result);
       } catch (error) {
@@ -2174,6 +2307,7 @@
       const longResult = result.long_result || result.long || null;
       const shortResult = result.short_result || result.short || null;
       const tagResult = result.tag_result || null;
+      const commentResult = result.comment_result || null;
       const box = document.getElementById("scanOut");
       box.className = `scan-result-card ${passed ? "pass" : "warn"}`;
       box.innerHTML = `
@@ -2182,6 +2316,7 @@
         ${longResult ? renderScanVersion("长版", longResult) : ""}
         ${shortResult ? renderScanVersion("短版", shortResult) : ""}
         ${tagResult ? renderScanVersion("话题标签", tagResult) : ""}
+        ${commentResult ? renderScanVersion("评论区话术", commentResult) : ""}
         <ul>${(suggestions.length ? suggestions : ["发布前仍需人工复核事实、价格、品牌身份和案例真实性。"]).map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       `;
       saveDraft();
@@ -2198,15 +2333,17 @@
       const longResult = scanText(latestOutput?.content_long || latestOutput?.body || "");
       const shortResult = scanText(latestOutput?.content_short || "");
       const tagResult = scanText(buildAllTagsText(latestOutput).replaceAll("#", ""));
-      const merged = Array.from(new Set([...(longResult.risk_terms || []), ...(shortResult.risk_terms || []), ...(tagResult.risk_terms || [])]));
+      const commentResult = scanText(buildEngagementCommentsText(latestOutput));
+      const merged = Array.from(new Set([...(longResult.risk_terms || []), ...(shortResult.risk_terms || []), ...(tagResult.risk_terms || []), ...(commentResult.risk_terms || [])]));
       return {
-        passed: longResult.passed && shortResult.passed && tagResult.passed,
+        passed: longResult.passed && shortResult.passed && tagResult.passed && commentResult.passed,
         risk_terms: merged,
-        score: Math.min(longResult.score, shortResult.score, tagResult.score),
-        suggestions: merged.length ? ["长短版和话题标签均需删除命中红线", "改成站内咨询或评论区承接"] : ["长短版和话题标签均可进入素材产出前确认"],
+        score: Math.min(longResult.score, shortResult.score, tagResult.score, commentResult.score),
+        suggestions: merged.length ? ["长短版、话题标签和评论区话术均需删除命中红线", "改成站内咨询或评论区承接"] : ["长短版、话题标签和评论区话术均可进入素材产出前确认"],
         long_result: longResult,
         short_result: shortResult,
-        tag_result: tagResult
+        tag_result: tagResult,
+        comment_result: commentResult
       };
     }
 
@@ -2368,12 +2505,42 @@
       const timing = latestOutput.publish_timing || {};
       const timingText = `📅 推荐发布时间\n工作日：${timing.weekday_slot || "周二/三 20:00-22:00"}\n周末：${timing.weekend_slot || "周日 20:00-22:00"}`;
       const checklistText = buildPhotoChecklistText(latestOutput);
-      return `${latestOutput.title || ""}\n\n${longText}\n\n${tags}\n\n置顶评论：${latestOutput.firstComment || ""}\n\n${timingText}\n\n${checklistText}${shortText ? `\n\n短版备用：\n${shortText}` : ""}`;
+      const commentsText = buildEngagementCommentsText(latestOutput);
+      const privateText = buildPrivateMessagesText(latestOutput);
+      const divider = "━━━━━━━━━━━━━━━━━━";
+      return [
+        latestOutput.title || "",
+        "",
+        longText,
+        "",
+        tags,
+        "",
+        `置顶评论：${latestOutput.firstComment || ""}`,
+        "",
+        divider,
+        "",
+        timingText,
+        "",
+        checklistText,
+        "",
+        divider,
+        "",
+        commentsText,
+        "",
+        divider,
+        "",
+        privateText,
+        "",
+        divider,
+        "",
+        "短版备用：",
+        shortText
+      ].join("\n").trim();
     }
 
     function buildScanText() {
       if (!latestOutput) return "";
-      return `${latestOutput.content_long || latestOutput.body || ""}\n\n${latestOutput.content_short || ""}\n\n${buildAllTagsText(latestOutput)}`;
+      return `${latestOutput.content_long || latestOutput.body || ""}\n\n${latestOutput.content_short || ""}\n\n${buildAllTagsText(latestOutput)}\n\n${buildEngagementCommentsText(latestOutput)}`;
     }
 
     async function copyPublishText() {
@@ -2392,6 +2559,16 @@
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
+    }
+
+    function safeFilenamePart(text) {
+      return String(text || "未填写店名").replace(/[\\/:*?"<>|]/g, "").slice(0, 24) || "未填写店名";
+    }
+
+    function downloadMarkdownFile() {
+      const profile = getMerchantProfile() || {};
+      const date = new Date().toISOString().slice(0, 10);
+      downloadTextFile(`特别想-Lab素材包_${safeFilenamePart(profile.store_name)}_${date}.md`, buildPublishText());
     }
 
     function restoreDraft() {
