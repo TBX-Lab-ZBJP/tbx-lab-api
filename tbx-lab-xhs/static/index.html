@@ -779,6 +779,16 @@
       gap: 12px;
       margin-top: 12px;
     }
+    .login-mobile-brand,
+    .login-mobile-bottom {
+      display: none;
+    }
+    .login-code-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: end;
+    }
     .restore-banner {
       display: none;
       align-items: center;
@@ -1360,6 +1370,98 @@
       .xhs-comment-bar span {
         white-space: nowrap;
       }
+      #loginModal.active {
+        background: #ffffff;
+        padding: 0;
+        align-items: stretch;
+      }
+      #loginModal .modal {
+        width: 100%;
+        height: 100vh;
+        max-height: 100vh;
+        border-radius: 0;
+        box-shadow: none;
+        padding: 40px 24px;
+        display: grid;
+        grid-template-rows: 30vh minmax(0, 1fr) auto;
+        gap: 24px;
+        overflow-y: auto;
+      }
+      #loginModal .modal > h2,
+      #loginModal .modal > .muted {
+        display: none;
+      }
+      .login-mobile-brand {
+        display: grid;
+        place-items: center;
+        text-align: center;
+        margin: -40px -24px 0;
+        padding: 38px 24px 26px;
+        background: linear-gradient(180deg, #f0f5ff 0%, #ffffff 100%);
+      }
+      .login-logo-mark {
+        font-size: 44px;
+        margin-bottom: 10px;
+      }
+      .login-brand-title {
+        font-size: 28px;
+        line-height: 1.2;
+        font-weight: 950;
+      }
+      .login-brand-sub {
+        margin-top: 8px;
+        color: #3157ff;
+        font-weight: 950;
+        font-size: 17px;
+      }
+      .login-brand-desc {
+        margin-top: 8px;
+        color: #64748b;
+        font-size: 13px;
+      }
+      .login-box {
+        align-content: start;
+        gap: 14px;
+        margin-top: 0;
+      }
+      .login-box::before {
+        content: "登录";
+        display: block;
+        font-size: 24px;
+        font-weight: 950;
+      }
+      .login-dev-note {
+        display: block;
+        color: #64748b;
+        font-size: 13px;
+        margin-top: -6px;
+      }
+      .login-code-row {
+        grid-template-columns: minmax(0, 1fr) 112px;
+        gap: 8px;
+      }
+      .login-code-row .btn {
+        height: 48px;
+        min-height: 48px;
+        padding: 0 10px;
+        font-size: 14px;
+        border-radius: 8px;
+      }
+      .login-submit-btn {
+        width: 100%;
+        height: 50px;
+        min-height: 50px;
+        font-size: 16px;
+        border-radius: 8px;
+      }
+      .login-mobile-bottom {
+        display: grid;
+        gap: 8px;
+        text-align: center;
+        color: #94a3b8;
+        font-size: 12px;
+        line-height: 1.6;
+      }
     }
   </style>
 </head>
@@ -1647,15 +1749,28 @@
 
   <div class="modal-backdrop" id="loginModal">
     <div class="modal">
+      <div class="login-mobile-brand">
+        <div>
+          <div class="login-logo-mark">📓</div>
+          <div class="login-brand-title">特别想-Lab</div>
+          <div class="login-brand-sub">小红书爆款文案专家</div>
+          <div class="login-brand-desc">餐饮酒旅商家专属 · 5 分钟出一篇带客笔记</div>
+        </div>
+      </div>
       <h2>登录特别想-Lab</h2>
       <div class="muted">开发期验证码固定为 1234，上线前会替换成短信验证码。</div>
       <div class="login-box">
+        <div class="login-dev-note">开发期验证码固定为 1234</div>
         <label class="field"><span>手机号</span><input id="loginPhone" inputmode="tel" placeholder="请输入手机号"></label>
-        <label class="field"><span>验证码</span><input id="loginCode" inputmode="numeric" placeholder="开发期输入 1234"></label>
-        <div class="actions">
+        <div class="login-code-row">
+          <label class="field"><span>验证码</span><input id="loginCode" inputmode="numeric" placeholder="请输入 4 位验证码"></label>
           <button class="btn ghost" onclick="sendLoginCode()">获取验证码</button>
-          <button class="btn" onclick="login()">登录</button>
         </div>
+        <button class="btn login-submit-btn" onclick="login()">登录</button>
+      </div>
+      <div class="login-mobile-bottom">
+        <div>登录即同意《用户协议》和《隐私政策》</div>
+        <div>首次登录即开通免费试用 · 5 次生成额度 · 3 天有效</div>
       </div>
     </div>
   </div>

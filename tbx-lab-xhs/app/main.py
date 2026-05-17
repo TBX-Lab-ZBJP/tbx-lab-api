@@ -9,6 +9,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
+import logging
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException
@@ -19,9 +20,10 @@ from pydantic import BaseModel
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
-DB_DIR = ROOT / "db"
-DB_PATH = DB_DIR / "tbx_lab_xhs.sqlite3"
+DB_PATH = Path(os.getenv("SQLITE_DB_PATH", str(ROOT / "db" / "tbx_lab_xhs.sqlite3")))
+DB_DIR = DB_PATH.parent
 AUTH_SECRET = os.getenv("AUTH_SECRET", "tbx-lab-dev-secret")
+logger = logging.getLogger("tbx_lab_xhs")
 
 HUNYUAN_BASE_URL = "https://tokenhub.tencentmaas.com/v1"
 HUNYUAN_MODEL = "hunyuan-2.0-instruct-20251111"
@@ -345,9 +347,9 @@ def b64url_decode(text: str) -> bytes:
     return base64.urlsafe_b64decode((text + padding).encode("ascii"))
 
 
-def create_token(user_id: str) -> str:
+def create_token(user_id: str, phone: str = "", nickname: str = "") -> str:
     header = {"alg": "HS256", "typ": "JWT"}
-    payload = {"sub": user_id, "exp": now_ts() + 60 * 60 * 24 * 30}
+    payload = {"sub": user_id, "phone": phone, "nickname": nickname, "exp": now_ts() + 60 * 60 * 24 * 30}
     signing_input = ".".join([
         b64url_encode(json.dumps(header, separators=(",", ":")).encode()),
         b64url_encode(json.dumps(payload, separators=(",", ":")).encode()),
@@ -356,7 +358,7 @@ def create_token(user_id: str) -> str:
     return f"{signing_input}.{b64url_encode(signature)}"
 
 
-def verify_token(token: str) -> str:
+def verify_token(token: str) -> dict[str, Any]:
     try:
         signing_input, signature = token.rsplit(".", 1)
         expected = b64url_encode(hmac.new(AUTH_SECRET.encode(), signing_input.encode(), hashlib.sha256).digest())
@@ -365,7 +367,7 @@ def verify_token(token: str) -> str:
         payload = json.loads(b64url_decode(signing_input.split(".")[1]))
         if int(payload.get("exp") or 0) < now_ts():
             raise ValueError("expired")
-        return str(payload["sub"])
+        return payload
     except Exception as exc:
         raise HTTPException(status_code=401, detail="登录已失效，请重新登录") from exc
 
@@ -373,9 +375,28 @@ def verify_token(token: str) -> str:
 def current_user(authorization: str | None) -> dict[str, Any]:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="请先登录")
-    user_id = verify_token(authorization.replace("Bearer ", "", 1).strip())
+    payload = verify_token(authorization.replace("Bearer ", "", 1).strip())
+    user_id = str(payload.get("sub") or "")
     with db_connect() as conn:
         user = row_to_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
+        logger.warning("auth check user_id=%s db_path=%s db_exists=%s found=%s", user_id, DB_PATH, DB_PATH.exists(), bool(user))
+        if not user and payload.get("phone"):
+            stamp = now_ts()
+            phone = re.sub(r"\D", "", str(payload.get("phone") or ""))
+            nickname = str(payload.get("nickname") or f"用户{phone[-4:]}")
+            logger.warning("auth user missing, recreating from token user_id=%s phone=%s", user_id, phone)
+            conn.execute(
+                """
+                INSERT INTO users (id, phone, nickname, plan_code, quota_remaining, trial_started_at, trial_expires_at, created_at, updated_at)
+                VALUES (?, ?, ?, 'free', 5, ?, ?, ?, ?)
+                ON CONFLICT(phone) DO UPDATE SET
+                    id=excluded.id,
+                    nickname=excluded.nickname,
+                    updated_at=excluded.updated_at
+                """,
+                (user_id, phone, nickname, stamp, stamp + 3 * 24 * 3600, stamp, stamp),
+            )
+            user = row_to_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
     if not user:
         raise HTTPException(status_code=401, detail="用户不存在，请重新登录")
     return user
@@ -442,6 +463,24 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "tbx-lab-xhs"}
 
 
+@app.get("/api/v1/admin/db-health")
+def db_health() -> dict[str, Any]:
+    init_db()
+    stat = DB_PATH.stat() if DB_PATH.exists() else None
+    with db_connect() as conn:
+        users_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        plans_count = conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0]
+    return {
+        "db_path": str(DB_PATH),
+        "db_exists": DB_PATH.exists(),
+        "db_size": stat.st_size if stat else 0,
+        "db_mtime": stat.st_mtime if stat else None,
+        "users_count": users_count,
+        "plans_count": plans_count,
+        "sqlite_db_path_env": os.getenv("SQLITE_DB_PATH", ""),
+    }
+
+
 @app.post("/api/v1/auth/send-code")
 def send_code(payload: SendCodeRequest) -> dict[str, Any]:
     # 开发期固定验证码；上线前替换为真实短信服务。
@@ -472,7 +511,7 @@ def login(payload: LoginRequest) -> dict[str, Any]:
                 (user_id, phone, nickname, created, created + 3 * 24 * 3600, created, created),
             )
             user = row_to_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
-    return {"token": create_token(user["id"]), "user": public_user(user), "plans": load_plans()}
+    return {"token": create_token(user["id"], user["phone"], user["nickname"]), "user": public_user(user), "plans": load_plans()}
 
 
 @app.get("/api/v1/auth/me")
