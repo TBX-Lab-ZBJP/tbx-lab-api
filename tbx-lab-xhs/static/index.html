@@ -718,6 +718,67 @@
       gap: 10px;
       align-items: center;
     }
+    .user-chip {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #e5e7eb;
+      border-radius: 999px;
+      background: #ffffff;
+      padding: 6px 10px;
+      font-weight: 900;
+      font-size: 13px;
+    }
+    .user-chip.active { display: inline-flex; }
+    .user-avatar {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: #3157ff;
+      color: #ffffff;
+      font-size: 12px;
+    }
+    .quota-text { color: #3157ff; }
+    .plan-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .plan-card {
+      position: relative;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 14px;
+      background: #ffffff;
+      display: grid;
+      gap: 10px;
+    }
+    .plan-card.current {
+      border-color: #3157ff;
+      box-shadow: 0 0 0 2px rgba(49, 87, 255, .08);
+    }
+    .plan-badge {
+      display: inline-flex;
+      width: max-content;
+      border-radius: 999px;
+      padding: 4px 8px;
+      background: #eff6ff;
+      color: #3157ff;
+      font-size: 12px;
+      font-weight: 950;
+    }
+    .plan-price {
+      font-size: 26px;
+      font-weight: 950;
+    }
+    .login-box {
+      display: grid;
+      gap: 12px;
+      margin-top: 12px;
+    }
     .restore-banner {
       display: none;
       align-items: center;
@@ -887,6 +948,7 @@
         padding-bottom: 76px;
       }
       .grid-2, .collect-form, .topic-prompts, .modal-grid { grid-template-columns: 1fr; }
+      .plan-grid { grid-template-columns: 1fr; }
       .topbar { display: block; }
       h1 { font-size: 24px; line-height: 1.3; }
       h2 { font-size: 18px; }
@@ -1330,7 +1392,9 @@
         <button onclick="closeMobileDrawer()" aria-label="关闭">×</button>
       </header>
       <button class="mobile-drawer-item" onclick="closeMobileDrawer(); openMerchantModal()">🏪 商家档案</button>
+      <button class="mobile-drawer-item" onclick="closeMobileDrawer(); openPlansModal()">💳 套餐管理</button>
       <button class="mobile-drawer-item" onclick="closeMobileDrawer(); openHistoryModal()">📋 历史记录</button>
+      <button class="mobile-drawer-item" onclick="closeMobileDrawer(); logout()">退出登录</button>
     </div>
   </div>
 
@@ -1344,6 +1408,7 @@
         <button data-step="scan" onclick="show('scan', this)">03 红线扫描</button>
         <button data-step="review" onclick="show('review', this)">04 素材产出</button>
       </div>
+      <button class="history-button" onclick="openPlansModal()">💳 套餐管理</button>
       <button class="history-button" onclick="openHistoryModal()">📋 历史记录</button>
       <div class="side-note">内部工具：生成内容仅作为素材产出前素材，不自动发布。</div>
     </aside>
@@ -1355,7 +1420,14 @@
           <div class="muted">面向餐饮、酒旅本地生活商家：基于行业爆款选题参考库，生成完整的小红书发布素材包。</div>
         </div>
         <div class="top-actions">
+          <div class="user-chip" id="userChip">
+            <span class="user-avatar" id="userAvatar">U</span>
+            <span id="userNickname">未登录</span>
+            <span class="quota-text" id="quotaText">剩余 0 次</span>
+          </div>
+          <button class="btn ghost" onclick="openPlansModal()">套餐管理</button>
           <button class="btn ghost" onclick="openMerchantModal()">🏪 商家档案</button>
+          <button class="btn ghost" onclick="logout()">退出</button>
         </div>
       </div>
       <div id="restoreBanner" class="restore-banner">
@@ -1451,7 +1523,7 @@
               <span>填空信息：店名 / 位置 / 产品 / 价格 / 到店理由</span>
               <textarea id="material" placeholder="例：店名、商圈/景区、招牌菜或房型、价格/套餐、停车/预约/核销规则、适合人群、老板想强调的卖点。"></textarea>
             </label>
-            <button class="btn" onclick="generate()">生成待审笔记</button>
+            <button id="generateButton" class="btn" onclick="generate()">生成待审笔记</button>
             <div class="actions desktop-only" style="margin-top:14px">
               <button id="nextScanBtn" class="btn" onclick="goStep('scan')" disabled>进入红线扫描 →</button>
             </div>
@@ -1573,6 +1645,32 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="loginModal">
+    <div class="modal">
+      <h2>登录特别想-Lab</h2>
+      <div class="muted">开发期验证码固定为 1234，上线前会替换成短信验证码。</div>
+      <div class="login-box">
+        <label class="field"><span>手机号</span><input id="loginPhone" inputmode="tel" placeholder="请输入手机号"></label>
+        <label class="field"><span>验证码</span><input id="loginCode" inputmode="numeric" placeholder="开发期输入 1234"></label>
+        <div class="actions">
+          <button class="btn ghost" onclick="sendLoginCode()">获取验证码</button>
+          <button class="btn" onclick="login()">登录</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="plansModal">
+    <div class="modal" style="width:min(980px,100%)">
+      <h2>套餐管理</h2>
+      <div class="muted">当前阶段只展示套餐，支付和升级会在 Stage 7 接入。</div>
+      <div id="plansList" class="plan-grid"></div>
+      <div class="actions" style="margin-top:16px">
+        <button class="btn ghost" onclick="closePlansModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast">已保存</div>
 
   <script>
@@ -1580,6 +1678,7 @@
     const PROFILE_KEY = "tbx_merchant_profile";
     const DRAFT_KEY = "tbx_current_draft";
     const HISTORY_KEY = "tbx_history";
+    const AUTH_TOKEN_KEY = "tbx_auth_token";
     const stepOrder = ["collect", "write", "scan", "review"];
     const styleLabels = {
       style_warm: "🌸 亲切",
@@ -1598,16 +1697,112 @@
     let posterTypeState = ["cover", "product", "detail", "scene", "price", "reason", "compare", "review", "action"];
     let currentPosterIndex = 0;
     let posterTouchStartX = 0;
+    let currentUser = null;
+    let plansCache = [];
+
+    function authHeaders() {
+      const token = localStorage.getItem(AUTH_TOKEN_KEY);
+      return token ? { Authorization: `Bearer ${token}` } : {};
+    }
+
+    async function apiGet(path) {
+      const response = await fetch(path, { headers: authHeaders() });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || data.error || `接口请求失败：${response.status}`);
+      return data;
+    }
 
     async function apiPost(path, payload) {
       const response = await fetch(path, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify(payload || {})
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || data.error || `接口请求失败：${response.status}`);
       return data;
+    }
+
+    async function initAuth() {
+      const token = localStorage.getItem(AUTH_TOKEN_KEY);
+      if (!token) {
+        openLoginModal();
+        return;
+      }
+      try {
+        const data = await apiGet("/api/v1/auth/me");
+        currentUser = data.user;
+        plansCache = data.plans || [];
+        updateUserArea();
+        await pullCloudState();
+      } catch {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        openLoginModal();
+      }
+    }
+
+    function openLoginModal() {
+      document.getElementById("loginModal").classList.add("active");
+    }
+
+    function closeLoginModal() {
+      document.getElementById("loginModal").classList.remove("active");
+    }
+
+    async function sendLoginCode() {
+      const phone = document.getElementById("loginPhone").value.trim();
+      if (!phone) return alert("请先输入手机号");
+      await apiPost("/api/v1/auth/send-code", { phone });
+      showToast("验证码已发送：开发期固定 1234");
+    }
+
+    async function login() {
+      const phone = document.getElementById("loginPhone").value.trim();
+      const code = document.getElementById("loginCode").value.trim();
+      try {
+        const data = await apiPost("/api/v1/auth/login", { phone, code });
+        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+        currentUser = data.user;
+        plansCache = data.plans || [];
+        updateUserArea();
+        closeLoginModal();
+        await migrateLocalStateToCloud();
+        await pullCloudState();
+        showToast("登录成功");
+        location.reload();
+      } catch (error) {
+        alert(error.message || "登录失败");
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      localStorage.removeItem(PROFILE_KEY);
+      localStorage.removeItem(DRAFT_KEY);
+      localStorage.removeItem(HISTORY_KEY);
+      currentUser = null;
+      location.reload();
+    }
+
+    function updateUserArea() {
+      const chip = document.getElementById("userChip");
+      if (!chip || !currentUser) return;
+      chip.classList.add("active");
+      document.getElementById("userAvatar").textContent = (currentUser.nickname || "U").slice(0, 1).toUpperCase();
+      document.getElementById("userNickname").textContent = currentUser.nickname || "用户";
+      document.getElementById("quotaText").textContent = `剩余 ${currentUser.quota_remaining ?? 0} 次`;
+      updateGenerateButtonQuota();
+      renderPlans();
+    }
+
+    function updateGenerateButtonQuota() {
+      const button = document.getElementById("generateButton");
+      const empty = currentUser && Number(currentUser.quota_remaining || 0) <= 0;
+      if (button) {
+        button.disabled = false;
+        button.textContent = empty ? "升级解锁" : "生成待审笔记";
+        button.onclick = empty ? openPlansModal : () => generate();
+      }
     }
 
     function readJson(key, fallback) {
@@ -1621,6 +1816,26 @@
 
     function writeJson(key, value) {
       localStorage.setItem(key, JSON.stringify(value));
+    }
+
+    async function migrateLocalStateToCloud() {
+      await apiPost("/api/v1/user/sync", {
+        merchant_profile: readJson(PROFILE_KEY, null),
+        draft: readJson(DRAFT_KEY, null),
+        history: readJson(HISTORY_KEY, [])
+      });
+    }
+
+    async function pullCloudState() {
+      const state = await apiGet("/api/v1/user/state");
+      if (state.merchant_profile) writeJson(PROFILE_KEY, state.merchant_profile);
+      if (state.draft) writeJson(DRAFT_KEY, state.draft);
+      if (Array.isArray(state.history)) writeJson(HISTORY_KEY, state.history);
+    }
+
+    async function saveCloud(path, payload) {
+      if (!localStorage.getItem(AUTH_TOKEN_KEY)) return;
+      try { await apiPost(path, payload); } catch {}
     }
 
     function splitLines(text, limit = 5) {
@@ -1696,6 +1911,7 @@
         return;
       }
       writeJson(PROFILE_KEY, profile);
+      saveCloud("/api/v1/user/merchant-profile", { profile });
       showToast("已保存");
       closeMerchantModal();
       saveDraft();
@@ -1750,7 +1966,9 @@
 
     function saveDraft() {
       if (isRestoringDraft) return;
-      writeJson(DRAFT_KEY, buildDraftState());
+      const draft = buildDraftState();
+      writeJson(DRAFT_KEY, draft);
+      saveCloud("/api/v1/user/draft", { draft });
     }
 
     function showRestoreBanner(updatedAt) {
@@ -1996,6 +2214,15 @@
         alert("请先在选题参考页勾选标题");
         return;
       }
+      if (!localStorage.getItem(AUTH_TOKEN_KEY)) {
+        openLoginModal();
+        return;
+      }
+      if (currentUser && Number(currentUser.quota_remaining || 0) <= 0) {
+        openPlansModal();
+        alert("额度已用完，请升级套餐");
+        return;
+      }
       const button = event?.currentTarget;
       const oldText = button?.textContent;
       if (button) {
@@ -2016,6 +2243,10 @@
           hook_type: selected?.hook_type || "",
           merchant_profile: getMerchantProfile()
         });
+        if (result.user) {
+          currentUser = result.user;
+          updateUserArea();
+        }
         latestOutput = result;
         generatedContents[activeStyle] = result;
         renderCopy(result);
@@ -2636,7 +2867,9 @@
     }
 
     function saveHistory(history) {
-      writeJson(HISTORY_KEY, history.slice(-10));
+      const next = history.slice(-10);
+      writeJson(HISTORY_KEY, next);
+      saveCloud("/api/v1/user/history", { history: next });
     }
 
     function archiveCurrent() {
@@ -2708,6 +2941,46 @@
       document.getElementById("historyDetailModal").classList.remove("active");
     }
 
+    async function openPlansModal() {
+      if (!plansCache.length) {
+        try {
+          const data = await apiGet("/api/v1/plans");
+          plansCache = data.plans || [];
+        } catch {}
+      }
+      renderPlans();
+      document.getElementById("plansModal").classList.add("active");
+    }
+
+    function closePlansModal() {
+      document.getElementById("plansModal").classList.remove("active");
+    }
+
+    function renderPlans() {
+      const box = document.getElementById("plansList");
+      if (!box) return;
+      const currentCode = currentUser?.plan_code || "free";
+      if (!plansCache.length) {
+        box.innerHTML = `<div class="muted">套餐加载中。</div>`;
+        return;
+      }
+      box.innerHTML = plansCache.map(plan => {
+        const isCurrent = plan.code === currentCode;
+        const price = Number(plan.price || 0);
+        return `<div class="plan-card ${isCurrent ? "current" : ""}">
+          <div>
+            <strong>${escapeHtml(plan.name)}</strong>
+            ${plan.is_recommended ? '<span class="plan-badge">推荐</span>' : ''}
+            ${isCurrent ? '<span class="plan-badge">当前套餐</span>' : ''}
+          </div>
+          <div class="plan-price">${price === 0 ? "0" : price} 元</div>
+          <div class="muted">${plan.duration_days} 天有效 · ${plan.quota} 次额度</div>
+          <ul>${(plan.features || []).map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+          <button class="btn ${isCurrent ? "ghost" : ""}" ${isCurrent ? "disabled" : ""} onclick="alert('敬请期待 Stage 7')">${isCurrent ? "当前套餐" : "立即购买"}</button>
+        </div>`;
+      }).join("");
+    }
+
     async function copyHistoryDetail() {
       if (!currentHistoryDetail) return;
       await navigator.clipboard.writeText(currentHistoryDetail);
@@ -2773,7 +3046,9 @@
       });
     }
 
-    window.addEventListener("DOMContentLoaded", () => {
+    window.addEventListener("DOMContentLoaded", async () => {
+      await initAuth();
+      if (!currentUser) return;
       restoreDraft();
       updateProgress();
       if (!getMerchantProfile()) {

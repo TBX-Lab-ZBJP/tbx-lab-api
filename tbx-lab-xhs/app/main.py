@@ -1,11 +1,17 @@
 import json
+import base64
+import hashlib
+import hmac
 import os
 import re
+import sqlite3
+import time
+import uuid
 from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -13,6 +19,9 @@ from pydantic import BaseModel
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
+DB_DIR = ROOT / "db"
+DB_PATH = DB_DIR / "tbx_lab_xhs.sqlite3"
+AUTH_SECRET = os.getenv("AUTH_SECRET", "tbx-lab-dev-secret")
 
 HUNYUAN_BASE_URL = "https://tokenhub.tencentmaas.com/v1"
 HUNYUAN_MODEL = "hunyuan-2.0-instruct-20251111"
@@ -80,6 +89,45 @@ PRIVATE_MESSAGE_TEMPLATES = {
     ],
 }
 
+DEFAULT_PLANS = [
+    {
+        "code": "free",
+        "name": "免费试用",
+        "price_cents": 0,
+        "duration_days": 3,
+        "quota": 5,
+        "features": ["3 天体验", "5 次生成额度", "基础素材包"],
+        "is_recommended": 0,
+    },
+    {
+        "code": "monthly",
+        "name": "月卡",
+        "price_cents": 9900,
+        "duration_days": 30,
+        "quota": 50,
+        "features": ["30 天有效", "50 次生成额度", "完整素材包"],
+        "is_recommended": 0,
+    },
+    {
+        "code": "quarterly",
+        "name": "季卡",
+        "price_cents": 25800,
+        "duration_days": 90,
+        "quota": 200,
+        "features": ["90 天有效", "200 次生成额度", "适合稳定运营"],
+        "is_recommended": 0,
+    },
+    {
+        "code": "yearly",
+        "name": "年卡",
+        "price_cents": 88800,
+        "duration_days": 365,
+        "quota": 1000,
+        "features": ["365 天有效", "1000 次生成额度", "推荐长期使用"],
+        "is_recommended": 1,
+    },
+]
+
 RED_LINES = [
     "字节",
     "官方服务商",
@@ -136,6 +184,100 @@ app = FastAPI(title="TBX Lab XHS Publisher", version="1.0.0")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+def db_connect() -> sqlite3.Connection:
+    DB_DIR.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def now_ts() -> int:
+    return int(time.time())
+
+
+def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    return dict(row) if row else None
+
+
+def init_db() -> None:
+    with db_connect() as conn:
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            phone TEXT NOT NULL UNIQUE,
+            nickname TEXT NOT NULL,
+            plan_code TEXT NOT NULL DEFAULT 'free',
+            quota_remaining INTEGER NOT NULL DEFAULT 5,
+            trial_started_at INTEGER NOT NULL,
+            trial_expires_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS plans (
+            code TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            price_cents INTEGER NOT NULL,
+            duration_days INTEGER NOT NULL,
+            quota INTEGER NOT NULL,
+            features_json TEXT NOT NULL,
+            is_recommended INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS usage_logs (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            quota_before INTEGER NOT NULL,
+            quota_after INTEGER NOT NULL,
+            meta_json TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS merchant_profiles (
+            user_id TEXT PRIMARY KEY,
+            profile_json TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS drafts (
+            user_id TEXT PRIMARY KEY,
+            draft_json TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS histories (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            history_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        """)
+        for plan in DEFAULT_PLANS:
+            conn.execute(
+                """
+                INSERT INTO plans (code, name, price_cents, duration_days, quota, features_json, is_recommended)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(code) DO UPDATE SET
+                    name=excluded.name,
+                    price_cents=excluded.price_cents,
+                    duration_days=excluded.duration_days,
+                    quota=excluded.quota,
+                    features_json=excluded.features_json,
+                    is_recommended=excluded.is_recommended
+                """,
+                (
+                    plan["code"],
+                    plan["name"],
+                    plan["price_cents"],
+                    plan["duration_days"],
+                    plan["quota"],
+                    json.dumps(plan["features"], ensure_ascii=False),
+                    plan["is_recommended"],
+                ),
+            )
+
+
+@app.on_event("startup")
+def startup() -> None:
+    init_db()
+
+
 class HotTitleRequest(BaseModel):
     platform: str = "小红书"
     lane: str = "餐饮"
@@ -165,6 +307,107 @@ class ScanRequest(BaseModel):
     tags_precise: list[str] = []
     tags_longtail: list[str] = []
     engagement_comments: list[Any] = []
+
+
+class SendCodeRequest(BaseModel):
+    phone: str
+
+
+class LoginRequest(BaseModel):
+    phone: str
+    code: str
+
+
+class SyncStateRequest(BaseModel):
+    merchant_profile: dict[str, Any] | None = None
+    draft: dict[str, Any] | None = None
+    history: list[Any] | None = None
+
+
+class SaveMerchantProfileRequest(BaseModel):
+    profile: dict[str, Any]
+
+
+class SaveDraftRequest(BaseModel):
+    draft: dict[str, Any]
+
+
+class SaveHistoryRequest(BaseModel):
+    history: list[Any]
+
+
+def b64url_encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def b64url_decode(text: str) -> bytes:
+    padding = "=" * (-len(text) % 4)
+    return base64.urlsafe_b64decode((text + padding).encode("ascii"))
+
+
+def create_token(user_id: str) -> str:
+    header = {"alg": "HS256", "typ": "JWT"}
+    payload = {"sub": user_id, "exp": now_ts() + 60 * 60 * 24 * 30}
+    signing_input = ".".join([
+        b64url_encode(json.dumps(header, separators=(",", ":")).encode()),
+        b64url_encode(json.dumps(payload, separators=(",", ":")).encode()),
+    ])
+    signature = hmac.new(AUTH_SECRET.encode(), signing_input.encode(), hashlib.sha256).digest()
+    return f"{signing_input}.{b64url_encode(signature)}"
+
+
+def verify_token(token: str) -> str:
+    try:
+        signing_input, signature = token.rsplit(".", 1)
+        expected = b64url_encode(hmac.new(AUTH_SECRET.encode(), signing_input.encode(), hashlib.sha256).digest())
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError("bad signature")
+        payload = json.loads(b64url_decode(signing_input.split(".")[1]))
+        if int(payload.get("exp") or 0) < now_ts():
+            raise ValueError("expired")
+        return str(payload["sub"])
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="登录已失效，请重新登录") from exc
+
+
+def current_user(authorization: str | None) -> dict[str, Any]:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="请先登录")
+    user_id = verify_token(authorization.replace("Bearer ", "", 1).strip())
+    with db_connect() as conn:
+        user = row_to_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
+    if not user:
+        raise HTTPException(status_code=401, detail="用户不存在，请重新登录")
+    return user
+
+
+def public_user(user: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": user["id"],
+        "phone": user["phone"],
+        "nickname": user["nickname"],
+        "plan_code": user["plan_code"],
+        "quota_remaining": user["quota_remaining"],
+        "trial_expires_at": user["trial_expires_at"],
+    }
+
+
+def load_plans() -> list[dict[str, Any]]:
+    with db_connect() as conn:
+        rows = conn.execute("SELECT * FROM plans ORDER BY price_cents ASC").fetchall()
+    return [
+        {
+            "code": row["code"],
+            "name": row["name"],
+            "price_cents": row["price_cents"],
+            "price": row["price_cents"] // 100,
+            "duration_days": row["duration_days"],
+            "quota": row["quota"],
+            "features": json.loads(row["features_json"]),
+            "is_recommended": bool(row["is_recommended"]),
+        }
+        for row in rows
+    ]
 
 
 def merchant_profile_prompt(profile: dict[str, Any] | None) -> str:
@@ -197,6 +440,127 @@ def home() -> FileResponse:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "tbx-lab-xhs"}
+
+
+@app.post("/api/v1/auth/send-code")
+def send_code(payload: SendCodeRequest) -> dict[str, Any]:
+    # 开发期固定验证码；上线前替换为真实短信服务。
+    phone = re.sub(r"\D", "", payload.phone or "")
+    if len(phone) < 6:
+        raise HTTPException(status_code=400, detail="请输入正确手机号")
+    return {"sent": True, "dev_code": "1234"}
+
+
+@app.post("/api/v1/auth/login")
+def login(payload: LoginRequest) -> dict[str, Any]:
+    phone = re.sub(r"\D", "", payload.phone or "")
+    if len(phone) < 6:
+        raise HTTPException(status_code=400, detail="请输入正确手机号")
+    if payload.code != "1234":
+        raise HTTPException(status_code=400, detail="验证码错误")
+    created = now_ts()
+    with db_connect() as conn:
+        user = row_to_dict(conn.execute("SELECT * FROM users WHERE phone = ?", (phone,)).fetchone())
+        if not user:
+            user_id = str(uuid.uuid4())
+            nickname = f"用户{phone[-4:]}"
+            conn.execute(
+                """
+                INSERT INTO users (id, phone, nickname, plan_code, quota_remaining, trial_started_at, trial_expires_at, created_at, updated_at)
+                VALUES (?, ?, ?, 'free', 5, ?, ?, ?, ?)
+                """,
+                (user_id, phone, nickname, created, created + 3 * 24 * 3600, created, created),
+            )
+            user = row_to_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
+    return {"token": create_token(user["id"]), "user": public_user(user), "plans": load_plans()}
+
+
+@app.get("/api/v1/auth/me")
+def me(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = current_user(authorization)
+    return {"user": public_user(user), "plans": load_plans()}
+
+
+@app.get("/api/v1/plans")
+def plans() -> dict[str, Any]:
+    return {"plans": load_plans()}
+
+
+@app.get("/api/v1/user/state")
+def get_user_state(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = current_user(authorization)
+    with db_connect() as conn:
+        profile_row = conn.execute("SELECT profile_json FROM merchant_profiles WHERE user_id = ?", (user["id"],)).fetchone()
+        draft_row = conn.execute("SELECT draft_json FROM drafts WHERE user_id = ?", (user["id"],)).fetchone()
+        history_rows = conn.execute("SELECT history_json FROM histories WHERE user_id = ? ORDER BY created_at ASC LIMIT 10", (user["id"],)).fetchall()
+    return {
+        "merchant_profile": json.loads(profile_row["profile_json"]) if profile_row else None,
+        "draft": json.loads(draft_row["draft_json"]) if draft_row else None,
+        "history": [json.loads(row["history_json"]) for row in history_rows],
+    }
+
+
+@app.post("/api/v1/user/sync")
+def sync_user_state(payload: SyncStateRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = current_user(authorization)
+    stamp = now_ts()
+    with db_connect() as conn:
+        if isinstance(payload.merchant_profile, dict) and payload.merchant_profile:
+            conn.execute(
+                "INSERT INTO merchant_profiles (user_id, profile_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET profile_json=excluded.profile_json, updated_at=excluded.updated_at",
+                (user["id"], json.dumps(payload.merchant_profile, ensure_ascii=False), stamp),
+            )
+        if isinstance(payload.draft, dict) and payload.draft:
+            conn.execute(
+                "INSERT INTO drafts (user_id, draft_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET draft_json=excluded.draft_json, updated_at=excluded.updated_at",
+                (user["id"], json.dumps(payload.draft, ensure_ascii=False), stamp),
+            )
+        if isinstance(payload.history, list):
+            conn.execute("DELETE FROM histories WHERE user_id = ?", (user["id"],))
+            for item in payload.history[-10:]:
+                if isinstance(item, dict):
+                    conn.execute(
+                        "INSERT INTO histories (id, user_id, history_json, created_at) VALUES (?, ?, ?, ?)",
+                        (str(item.get("id") or uuid.uuid4()), user["id"], json.dumps(item, ensure_ascii=False), stamp),
+                    )
+    return get_user_state(authorization)
+
+
+@app.post("/api/v1/user/merchant-profile")
+def save_cloud_merchant_profile(payload: SaveMerchantProfileRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = current_user(authorization)
+    with db_connect() as conn:
+        conn.execute(
+            "INSERT INTO merchant_profiles (user_id, profile_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET profile_json=excluded.profile_json, updated_at=excluded.updated_at",
+            (user["id"], json.dumps(payload.profile, ensure_ascii=False), now_ts()),
+        )
+    return {"ok": True}
+
+
+@app.post("/api/v1/user/draft")
+def save_cloud_draft(payload: SaveDraftRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = current_user(authorization)
+    with db_connect() as conn:
+        conn.execute(
+            "INSERT INTO drafts (user_id, draft_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET draft_json=excluded.draft_json, updated_at=excluded.updated_at",
+            (user["id"], json.dumps(payload.draft, ensure_ascii=False), now_ts()),
+        )
+    return {"ok": True}
+
+
+@app.post("/api/v1/user/history")
+def save_cloud_history(payload: SaveHistoryRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = current_user(authorization)
+    stamp = now_ts()
+    with db_connect() as conn:
+        conn.execute("DELETE FROM histories WHERE user_id = ?", (user["id"],))
+        for item in payload.history[-10:]:
+            if isinstance(item, dict):
+                conn.execute(
+                    "INSERT INTO histories (id, user_id, history_json, created_at) VALUES (?, ?, ?, ?)",
+                    (str(item.get("id") or uuid.uuid4()), user["id"], json.dumps(item, ensure_ascii=False), stamp),
+                )
+    return {"ok": True}
 
 
 @app.get("/api/v1/xhs/model-test")
@@ -405,7 +769,10 @@ def scan(payload: ScanRequest) -> dict[str, Any]:
 
 
 @app.post("/api/v1/xhs/draft")
-async def draft(payload: DraftRequest) -> dict[str, Any]:
+async def draft(payload: DraftRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = current_user(authorization)
+    if int(user.get("quota_remaining") or 0) <= 0:
+        raise HTTPException(status_code=403, detail="额度已用完，请升级套餐")
     try:
         result = await generate_with_hunyuan(payload.model_dump())
     except Exception as exc:
@@ -434,6 +801,26 @@ async def draft(payload: DraftRequest) -> dict[str, Any]:
         tags_longtail=result.get("tags_longtail", []),
         engagement_comments=result.get("engagement_comments", []),
     ))
+    quota_before = int(user.get("quota_remaining") or 0)
+    quota_after = quota_before - 1
+    with db_connect() as conn:
+        conn.execute(
+            "UPDATE users SET quota_remaining = ?, updated_at = ? WHERE id = ?",
+            (quota_after, now_ts(), user["id"]),
+        )
+        conn.execute(
+            "INSERT INTO usage_logs (id, user_id, action, quota_before, quota_after, meta_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                str(uuid.uuid4()),
+                user["id"],
+                "draft_generate",
+                quota_before,
+                quota_after,
+                json.dumps({"title": payload.selected_title or payload.title, "style": payload.style}, ensure_ascii=False),
+                now_ts(),
+            ),
+        )
+    result["user"] = public_user({**user, "quota_remaining": quota_after})
     result["status"] = "employee_review_required"
     result["outputType"] = "标准笔记素材包"
     return result
