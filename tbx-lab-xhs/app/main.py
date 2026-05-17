@@ -599,6 +599,8 @@ def env_check() -> dict[str, Any]:
 
 @app.post("/api/v1/xhs/hot-titles")
 async def hot_titles(payload: HotTitleRequest) -> dict[str, Any]:
+    if os.getenv("XHS_USE_LLM_HOT_TITLES", "0") != "1":
+        return fallback_hot_titles(payload)
     try:
         return await generate_hot_titles_with_hunyuan(payload)
     except Exception:
