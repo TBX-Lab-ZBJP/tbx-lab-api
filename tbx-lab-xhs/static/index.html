@@ -1035,6 +1035,12 @@
       padding: 16px;
       margin-bottom: 14px;
     }
+    .admin-login-box {
+      max-width: 420px;
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
     .admin-tabs {
       display: flex;
       flex-wrap: wrap;
@@ -1851,6 +1857,14 @@
     <div class="admin-card">
       <h1>订单管理</h1>
       <div id="adminAccessMessage" class="muted">正在校验管理员权限。</div>
+      <div id="adminLoginBox" class="admin-login-box hidden">
+        <label class="field"><span>管理员手机号</span><input id="adminLoginPhone" inputmode="tel" placeholder="请输入管理员手机号"></label>
+        <div class="login-code-row">
+          <label class="field"><span>验证码</span><input id="adminLoginCode" inputmode="numeric" placeholder="开发期固定 1234"></label>
+          <button class="btn ghost" onclick="sendAdminLoginCode()">获取验证码</button>
+        </div>
+        <button class="btn" onclick="adminLogin()">登录管理员后台</button>
+      </div>
     </div>
     <div id="adminContent" class="hidden">
       <div class="admin-summary">
@@ -2017,6 +2031,7 @@
     const HISTORY_KEY = "tbx_history";
     const AUTH_TOKEN_KEY = "tbx_auth_token";
     const AUTH_PHONE_KEY = "tbx_auth_phone";
+    const ADMIN_VERIFIED_KEY = "tbx_admin_verified_phone";
     const stepOrder = ["collect", "write", "scan", "review"];
     const styleLabels = {
       style_warm: "🌸 亲切",
@@ -2123,6 +2138,7 @@
     function logout() {
       localStorage.removeItem(AUTH_TOKEN_KEY);
       localStorage.removeItem(AUTH_PHONE_KEY);
+      sessionStorage.removeItem(ADMIN_VERIFIED_KEY);
       clearLocalWorkCache();
       currentUser = null;
       location.reload();
@@ -3499,14 +3515,66 @@
       document.getElementById("mobileHeader").style.display = "none";
       document.getElementById("mobileTabbar").style.display = "none";
       document.getElementById("adminPage").classList.add("active");
+      closeLoginModal();
       const message = document.getElementById("adminAccessMessage");
-      if (!currentUser?.is_admin) {
-        message.textContent = "无权限访问";
+      const loginBox = document.getElementById("adminLoginBox");
+      const verifiedPhone = sessionStorage.getItem(ADMIN_VERIFIED_KEY);
+      if (!verifiedPhone || !localStorage.getItem(AUTH_TOKEN_KEY)) {
+        showAdminLogin("请先登录管理员账号。");
         return;
       }
+      try {
+        const data = await apiGet("/api/v1/auth/me");
+        currentUser = data.user;
+        plansCache = data.plans || [];
+      } catch {
+        showAdminLogin("登录已失效，请重新登录管理员账号。");
+        return;
+      }
+      if (!currentUser?.is_admin || currentUser.phone !== verifiedPhone) {
+        showAdminLogin("无权限访问，请使用管理员手机号登录。");
+        return;
+      }
+      loginBox.classList.add("hidden");
       message.textContent = "已进入管理员订单后台";
       document.getElementById("adminContent").classList.remove("hidden");
       await loadAdminOrders("paid_pending");
+    }
+
+    function showAdminLogin(messageText) {
+      document.getElementById("adminAccessMessage").textContent = messageText || "请登录管理员账号。";
+      document.getElementById("adminLoginBox").classList.remove("hidden");
+      document.getElementById("adminContent").classList.add("hidden");
+      document.getElementById("adminLoginPhone").value = localStorage.getItem(AUTH_PHONE_KEY) || "";
+    }
+
+    async function sendAdminLoginCode() {
+      const phone = document.getElementById("adminLoginPhone").value.trim();
+      if (!phone) return alert("请先输入管理员手机号");
+      await apiPost("/api/v1/auth/send-code", { phone });
+      showToast("验证码已发送：开发期固定 1234");
+    }
+
+    async function adminLogin() {
+      const phone = document.getElementById("adminLoginPhone").value.trim();
+      const code = document.getElementById("adminLoginCode").value.trim();
+      if (!phone || !code) return alert("请输入手机号和验证码");
+      try {
+        const loginData = await apiPost("/api/v1/auth/login", { phone, code });
+        localStorage.setItem(AUTH_TOKEN_KEY, loginData.token);
+        localStorage.setItem(AUTH_PHONE_KEY, loginData.user?.phone || phone);
+        const meData = await apiGet("/api/v1/auth/me");
+        if (!meData.user?.is_admin) {
+          sessionStorage.removeItem(ADMIN_VERIFIED_KEY);
+          throw new Error("该手机号不是管理员账号");
+        }
+        currentUser = meData.user;
+        plansCache = meData.plans || [];
+        sessionStorage.setItem(ADMIN_VERIFIED_KEY, currentUser.phone);
+        await loadAdminPage();
+      } catch (error) {
+        alert(error.message || "管理员登录失败");
+      }
     }
 
     async function loadAdminOrders(status = "paid_pending", button) {
@@ -3650,12 +3718,12 @@
     }
 
     window.addEventListener("DOMContentLoaded", async () => {
-      await initAuth();
-      if (!currentUser) return;
       if (location.pathname === "/admin") {
         await loadAdminPage();
         return;
       }
+      await initAuth();
+      if (!currentUser) return;
       restoreDraft();
       updateProgress();
       if (!getMerchantProfile()) {
