@@ -322,7 +322,7 @@ def migrate_existing_schema(conn: DatabaseConnection) -> None:
     ensure_column(conn, "orders", "amount", "amount DECIMAL(10,2) NOT NULL DEFAULT 0" if is_mysql() else "amount REAL NOT NULL DEFAULT 0")
     ensure_column(conn, "orders", "status", "status VARCHAR(32) NOT NULL DEFAULT 'pending'" if is_mysql() else "status TEXT NOT NULL DEFAULT 'pending'")
     ensure_column(conn, "orders", "pay_method", "pay_method VARCHAR(32) NOT NULL DEFAULT 'manual'" if is_mysql() else "pay_method TEXT NOT NULL DEFAULT 'manual'")
-    ensure_column(conn, "orders", "payment_screenshot", "payment_screenshot TEXT")
+    ensure_column(conn, "orders", "payment_screenshot", "payment_screenshot MEDIUMTEXT" if is_mysql() else "payment_screenshot TEXT")
     ensure_column(conn, "orders", "remark", "remark TEXT")
     ensure_column(conn, "orders", "created_at", "created_at BIGINT NOT NULL DEFAULT 0" if is_mysql() else "created_at INTEGER NOT NULL DEFAULT 0")
     ensure_column(conn, "orders", "paid_at", "paid_at BIGINT" if is_mysql() else "paid_at INTEGER")
@@ -335,6 +335,9 @@ def migrate_existing_schema(conn: DatabaseConnection) -> None:
     ensure_column(conn, "subscriptions", "end_at", "end_at BIGINT NOT NULL DEFAULT 0" if is_mysql() else "end_at INTEGER NOT NULL DEFAULT 0")
     ensure_column(conn, "subscriptions", "status", "status VARCHAR(32) NOT NULL DEFAULT 'active'" if is_mysql() else "status TEXT NOT NULL DEFAULT 'active'")
     ensure_column(conn, "subscriptions", "created_at", "created_at BIGINT NOT NULL DEFAULT 0" if is_mysql() else "created_at INTEGER NOT NULL DEFAULT 0")
+    if is_mysql():
+        # 付款截图以 base64 存储，普通 TEXT 只有约 64KB，必须用 MEDIUMTEXT 才能容纳 2MB 内截图。
+        conn.execute("ALTER TABLE orders MODIFY COLUMN payment_screenshot MEDIUMTEXT")
 
 
 def init_db() -> None:
@@ -396,7 +399,7 @@ def init_db() -> None:
         amount REAL NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending',
         pay_method TEXT NOT NULL DEFAULT 'manual',
-        payment_screenshot TEXT,
+        payment_screenshot MEDIUMTEXT,
         remark TEXT,
         created_at INTEGER NOT NULL,
         paid_at INTEGER,
