@@ -2119,6 +2119,8 @@
       const code = document.getElementById("loginCode").value.trim();
       try {
         const previousPhone = localStorage.getItem(AUTH_PHONE_KEY);
+        resetOrderUi();
+        sessionStorage.removeItem(ADMIN_VERIFIED_KEY);
         if (previousPhone && previousPhone !== phone) clearLocalWorkCache();
         const data = await apiPost("/api/v1/auth/login", { phone, code });
         localStorage.setItem(AUTH_TOKEN_KEY, data.token);
@@ -2140,8 +2142,20 @@
       localStorage.removeItem(AUTH_PHONE_KEY);
       sessionStorage.removeItem(ADMIN_VERIFIED_KEY);
       clearLocalWorkCache();
+      resetOrderUi();
       currentUser = null;
       location.reload();
+    }
+
+    function resetOrderUi() {
+      currentOrder = null;
+      paymentScreenshotBase64 = "";
+      ["ordersModal", "paymentModal", "screenshotModal"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove("active");
+      });
+      const list = document.getElementById("ordersList");
+      if (list) list.innerHTML = "";
     }
 
     function updateUserArea() {
@@ -3407,6 +3421,7 @@
     }
 
     function openPaymentModal(order) {
+      closeOrdersModal();
       currentOrder = order;
       paymentScreenshotBase64 = "";
       const info = document.getElementById("paymentOrderInfo");
@@ -3462,6 +3477,9 @@
 
     async function openOrdersModal() {
       try {
+        const me = await apiGet("/api/v1/auth/me");
+        currentUser = me.user || currentUser;
+        updateUserArea();
         const data = await apiGet("/api/v1/orders");
         renderOrders(data.orders || []);
         document.getElementById("ordersModal").classList.add("active");
@@ -3476,11 +3494,15 @@
 
     function renderOrders(orders) {
       const box = document.getElementById("ordersList");
-      if (!orders.length) {
+      const visibleOrders = (orders || []).filter(order => {
+        if (!order.user_id || !currentUser?.id) return true;
+        return String(order.user_id) === String(currentUser.id);
+      });
+      if (!visibleOrders.length) {
         box.innerHTML = `<div class="muted">还没有订单。</div>`;
         return;
       }
-      box.innerHTML = orders.map(order => {
+      box.innerHTML = visibleOrders.map(order => {
         const canPay = order.status === "pending";
         return `<div class="order-item">
           <div>
