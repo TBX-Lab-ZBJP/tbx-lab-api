@@ -17,9 +17,16 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+try:
+    import pymysql
+    import pymysql.cursors
+except Exception:  # pragma: no cover - optional dependency for local SQLite mode
+    pymysql = None
+
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT / "static"
+DB_TYPE = os.getenv("DB_TYPE", "sqlite").strip().lower()
 DB_PATH = Path(os.getenv("SQLITE_DB_PATH", str(ROOT / "db" / "tbx_lab_xhs.sqlite3")))
 DB_DIR = DB_PATH.parent
 AUTH_SECRET = os.getenv("AUTH_SECRET", "tbx-lab-dev-secret")
@@ -186,93 +193,242 @@ app = FastAPI(title="TBX Lab XHS Publisher", version="1.0.0")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-def db_connect() -> sqlite3.Connection:
-    DB_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def is_mysql() -> bool:
+    return DB_TYPE == "mysql"
+
+
+class DatabaseConnection:
+    def __init__(self) -> None:
+        self.is_mysql = is_mysql()
+        if self.is_mysql:
+            if pymysql is None:
+                raise RuntimeError("MySQL mode requires pymysql and cryptography dependencies")
+            try:
+                self.conn = pymysql.connect(
+                    host=os.getenv("DB_HOST", "").strip(),
+                    port=int(os.getenv("DB_PORT", "3306")),
+                    user=os.getenv("DB_USER", "").strip(),
+                    password=os.getenv("DB_PASSWORD", ""),
+                    database=os.getenv("DB_NAME", "").strip(),
+                    charset="utf8mb4",
+                    autocommit=True,
+                    cursorclass=pymysql.cursors.DictCursor,
+                )
+            except Exception as exc:
+                raise RuntimeError("MySQL 连接失败，请检查 DB_HOST/DB_PASSWORD 环境变量") from exc
+        else:
+            DB_DIR.mkdir(parents=True, exist_ok=True)
+            self.conn = sqlite3.connect(DB_PATH)
+            self.conn.row_factory = sqlite3.Row
+
+    def __enter__(self) -> "DatabaseConnection":
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        if not self.is_mysql:
+            if exc_type:
+                self.conn.rollback()
+            else:
+                self.conn.commit()
+        self.conn.close()
+
+    def _sql(self, sql: str) -> str:
+        return sql.replace("?", "%s") if self.is_mysql else sql
+
+    def execute(self, sql: str, params: tuple[Any, ...] | list[Any] = ()) -> Any:
+        if self.is_mysql:
+            cursor = self.conn.cursor()
+            cursor.execute(self._sql(sql), params or ())
+            return cursor
+        return self.conn.execute(sql, params or ())
+
+    def executescript(self, sql: str) -> None:
+        if not self.is_mysql:
+            self.conn.executescript(sql)
+            return
+        for statement in sql.split(";"):
+            statement = statement.strip()
+            if statement:
+                self.execute(statement)
+
+
+def db_connect() -> DatabaseConnection:
+    return DatabaseConnection()
+
+
+def execute_query(sql: str, params: tuple[Any, ...] | list[Any] = ()) -> list[dict[str, Any]]:
+    with db_connect() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [row_to_dict(row) or {} for row in rows]
+
+
+def execute_update(sql: str, params: tuple[Any, ...] | list[Any] = ()) -> int:
+    with db_connect() as conn:
+        cursor = conn.execute(sql, params)
+        return int(getattr(cursor, "rowcount", 0) or 0)
 
 
 def now_ts() -> int:
     return int(time.time())
 
 
-def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
+def row_to_dict(row: Any | None) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
 def init_db() -> None:
-    with db_connect() as conn:
-        conn.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            phone TEXT NOT NULL UNIQUE,
-            nickname TEXT NOT NULL,
-            plan_code TEXT NOT NULL DEFAULT 'free',
-            quota_remaining INTEGER NOT NULL DEFAULT 5,
-            trial_started_at INTEGER NOT NULL,
-            trial_expires_at INTEGER NOT NULL,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS plans (
-            code TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            price_cents INTEGER NOT NULL,
-            duration_days INTEGER NOT NULL,
-            quota INTEGER NOT NULL,
-            features_json TEXT NOT NULL,
-            is_recommended INTEGER NOT NULL DEFAULT 0
-        );
-        CREATE TABLE IF NOT EXISTS usage_logs (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            action TEXT NOT NULL,
-            quota_before INTEGER NOT NULL,
-            quota_after INTEGER NOT NULL,
-            meta_json TEXT NOT NULL DEFAULT '{}',
-            created_at INTEGER NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS merchant_profiles (
-            user_id TEXT PRIMARY KEY,
-            profile_json TEXT NOT NULL,
-            updated_at INTEGER NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS drafts (
-            user_id TEXT PRIMARY KEY,
-            draft_json TEXT NOT NULL,
-            updated_at INTEGER NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS histories (
-            id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            history_json TEXT NOT NULL,
-            created_at INTEGER NOT NULL
-        );
-        """)
-        for plan in DEFAULT_PLANS:
-            conn.execute(
-                """
-                INSERT INTO plans (code, name, price_cents, duration_days, quota, features_json, is_recommended)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(code) DO UPDATE SET
-                    name=excluded.name,
-                    price_cents=excluded.price_cents,
-                    duration_days=excluded.duration_days,
-                    quota=excluded.quota,
-                    features_json=excluded.features_json,
-                    is_recommended=excluded.is_recommended
-                """,
-                (
-                    plan["code"],
-                    plan["name"],
-                    plan["price_cents"],
-                    plan["duration_days"],
-                    plan["quota"],
-                    json.dumps(plan["features"], ensure_ascii=False),
-                    plan["is_recommended"],
-                ),
-            )
+    sqlite_schema = """
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        phone TEXT NOT NULL UNIQUE,
+        nickname TEXT NOT NULL,
+        plan_code TEXT NOT NULL DEFAULT 'free',
+        quota_remaining INTEGER NOT NULL DEFAULT 5,
+        trial_started_at INTEGER NOT NULL,
+        trial_expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS plans (
+        code TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        price_cents INTEGER NOT NULL,
+        duration_days INTEGER NOT NULL,
+        quota INTEGER NOT NULL,
+        features_json TEXT NOT NULL,
+        is_recommended INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS usage_logs (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        quota_before INTEGER NOT NULL,
+        quota_after INTEGER NOT NULL,
+        meta_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS merchant_profiles (
+        user_id TEXT PRIMARY KEY,
+        profile_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS drafts (
+        user_id TEXT PRIMARY KEY,
+        draft_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS histories (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        history_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+    );
+    """
+    mysql_schema = """
+    CREATE TABLE IF NOT EXISTS users (
+        id VARCHAR(64) PRIMARY KEY,
+        phone VARCHAR(20) NOT NULL UNIQUE,
+        nickname VARCHAR(64) NOT NULL,
+        plan_code VARCHAR(32) NOT NULL DEFAULT 'free',
+        quota_remaining INT NOT NULL DEFAULT 5,
+        trial_started_at BIGINT NOT NULL,
+        trial_expires_at BIGINT NOT NULL,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    CREATE TABLE IF NOT EXISTS plans (
+        code VARCHAR(32) PRIMARY KEY,
+        name VARCHAR(64) NOT NULL,
+        price_cents INT NOT NULL,
+        duration_days INT NOT NULL,
+        quota INT NOT NULL,
+        features_json TEXT NOT NULL,
+        is_recommended TINYINT NOT NULL DEFAULT 0
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    CREATE TABLE IF NOT EXISTS usage_logs (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        action VARCHAR(64) NOT NULL,
+        quota_before INT NOT NULL,
+        quota_after INT NOT NULL,
+        meta_json TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        INDEX idx_usage_logs_user_id (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    CREATE TABLE IF NOT EXISTS merchant_profiles (
+        user_id VARCHAR(64) PRIMARY KEY,
+        profile_json TEXT NOT NULL,
+        updated_at BIGINT NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    CREATE TABLE IF NOT EXISTS drafts (
+        user_id VARCHAR(64) PRIMARY KEY,
+        draft_json TEXT NOT NULL,
+        updated_at BIGINT NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    CREATE TABLE IF NOT EXISTS histories (
+        id VARCHAR(64) PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        history_json TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        INDEX idx_histories_user_id (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    """
+    try:
+        with db_connect() as conn:
+            conn.executescript(mysql_schema if is_mysql() else sqlite_schema)
+            for plan in DEFAULT_PLANS:
+                if is_mysql():
+                    conn.execute(
+                        """
+                        INSERT INTO plans (code, name, price_cents, duration_days, quota, features_json, is_recommended)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON DUPLICATE KEY UPDATE
+                            name=VALUES(name),
+                            price_cents=VALUES(price_cents),
+                            duration_days=VALUES(duration_days),
+                            quota=VALUES(quota),
+                            features_json=VALUES(features_json),
+                            is_recommended=VALUES(is_recommended)
+                        """,
+                        (
+                            plan["code"],
+                            plan["name"],
+                            plan["price_cents"],
+                            plan["duration_days"],
+                            plan["quota"],
+                            json.dumps(plan["features"], ensure_ascii=False),
+                            plan["is_recommended"],
+                        ),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        INSERT INTO plans (code, name, price_cents, duration_days, quota, features_json, is_recommended)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(code) DO UPDATE SET
+                            name=excluded.name,
+                            price_cents=excluded.price_cents,
+                            duration_days=excluded.duration_days,
+                            quota=excluded.quota,
+                            features_json=excluded.features_json,
+                            is_recommended=excluded.is_recommended
+                        """,
+                        (
+                            plan["code"],
+                            plan["name"],
+                            plan["price_cents"],
+                            plan["duration_days"],
+                            plan["quota"],
+                            json.dumps(plan["features"], ensure_ascii=False),
+                            plan["is_recommended"],
+                        ),
+                    )
+    except Exception:
+        if is_mysql():
+            logger.exception("MySQL 连接失败，请检查 DB_HOST/DB_PASSWORD 环境变量")
+        else:
+            logger.exception("SQLite 初始化失败，请检查 SQLITE_DB_PATH")
+        raise
 
 
 @app.on_event("startup")
@@ -385,17 +541,30 @@ def current_user(authorization: str | None) -> dict[str, Any]:
             phone = re.sub(r"\D", "", str(payload.get("phone") or ""))
             nickname = str(payload.get("nickname") or f"用户{phone[-4:]}")
             logger.warning("auth user missing, recreating from token user_id=%s phone=%s", user_id, phone)
-            conn.execute(
-                """
-                INSERT INTO users (id, phone, nickname, plan_code, quota_remaining, trial_started_at, trial_expires_at, created_at, updated_at)
-                VALUES (?, ?, ?, 'free', 5, ?, ?, ?, ?)
-                ON CONFLICT(phone) DO UPDATE SET
-                    id=excluded.id,
-                    nickname=excluded.nickname,
-                    updated_at=excluded.updated_at
-                """,
-                (user_id, phone, nickname, stamp, stamp + 3 * 24 * 3600, stamp, stamp),
-            )
+            if is_mysql():
+                conn.execute(
+                    """
+                    INSERT INTO users (id, phone, nickname, plan_code, quota_remaining, trial_started_at, trial_expires_at, created_at, updated_at)
+                    VALUES (?, ?, ?, 'free', 5, ?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE
+                        id=VALUES(id),
+                        nickname=VALUES(nickname),
+                        updated_at=VALUES(updated_at)
+                    """,
+                    (user_id, phone, nickname, stamp, stamp + 3 * 24 * 3600, stamp, stamp),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO users (id, phone, nickname, plan_code, quota_remaining, trial_started_at, trial_expires_at, created_at, updated_at)
+                    VALUES (?, ?, ?, 'free', 5, ?, ?, ?, ?)
+                    ON CONFLICT(phone) DO UPDATE SET
+                        id=excluded.id,
+                        nickname=excluded.nickname,
+                        updated_at=excluded.updated_at
+                    """,
+                    (user_id, phone, nickname, stamp, stamp + 3 * 24 * 3600, stamp, stamp),
+                )
             user = row_to_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
     if not user:
         raise HTTPException(status_code=401, detail="用户不存在，请重新登录")
@@ -431,6 +600,32 @@ def load_plans() -> list[dict[str, Any]]:
     ]
 
 
+def upsert_user_json(conn: DatabaseConnection, table: str, json_column: str, user_id: str, value: Any, stamp: int) -> None:
+    payload = json.dumps(value, ensure_ascii=False)
+    if is_mysql():
+        conn.execute(
+            f"""
+            INSERT INTO {table} (user_id, {json_column}, updated_at)
+            VALUES (?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                {json_column}=VALUES({json_column}),
+                updated_at=VALUES(updated_at)
+            """,
+            (user_id, payload, stamp),
+        )
+        return
+    conn.execute(
+        f"""
+        INSERT INTO {table} (user_id, {json_column}, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            {json_column}=excluded.{json_column},
+            updated_at=excluded.updated_at
+        """,
+        (user_id, payload, stamp),
+    )
+
+
 def merchant_profile_prompt(profile: dict[str, Any] | None) -> str:
     if not isinstance(profile, dict) or not profile:
         return "【商家信息】未提供，请使用本地生活商家的通用口径生成。"
@@ -463,22 +658,78 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "tbx-lab-xhs"}
 
 
+def scalar_value(row: Any | None) -> Any:
+    if row is None:
+        return 0
+    if isinstance(row, dict):
+        return next(iter(row.values()), 0)
+    return row[0]
+
+
+def env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def safe_count(conn: DatabaseConnection, table: str) -> int:
+    try:
+        return int(scalar_value(conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()) or 0)
+    except Exception:
+        return 0
+
+
 @app.get("/api/v1/admin/db-health")
 def db_health() -> dict[str, Any]:
-    init_db()
-    stat = DB_PATH.stat() if DB_PATH.exists() else None
-    with db_connect() as conn:
-        users_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-        plans_count = conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0]
-    return {
-        "db_path": str(DB_PATH),
-        "db_exists": DB_PATH.exists(),
-        "db_size": stat.st_size if stat else 0,
-        "db_mtime": stat.st_mtime if stat else None,
-        "users_count": users_count,
-        "plans_count": plans_count,
-        "sqlite_db_path_env": os.getenv("SQLITE_DB_PATH", ""),
+    db_connected = True
+    error = ""
+    counts = {
+        "users_count": 0,
+        "plans_count": 0,
+        "subscriptions_count": 0,
+        "merchant_profiles_count": 0,
+        "histories_count": 0,
+        "drafts_count": 0,
+        "usage_logs_count": 0,
     }
+    try:
+        init_db()
+        with db_connect() as conn:
+            counts["users_count"] = safe_count(conn, "users")
+            counts["plans_count"] = safe_count(conn, "plans")
+            counts["subscriptions_count"] = safe_count(conn, "subscriptions")
+            counts["merchant_profiles_count"] = safe_count(conn, "merchant_profiles")
+            counts["histories_count"] = safe_count(conn, "histories")
+            counts["drafts_count"] = safe_count(conn, "drafts")
+            counts["usage_logs_count"] = safe_count(conn, "usage_logs")
+    except Exception as exc:
+        db_connected = False
+        error = str(exc)
+
+    response: dict[str, Any] = {
+        "db_type": "mysql" if is_mysql() else "sqlite",
+        "db_connected": db_connected,
+        **counts,
+    }
+    if error:
+        response["error"] = error
+    if is_mysql():
+        response.update({
+            "db_host": os.getenv("DB_HOST", "").strip(),
+            "db_port": env_int("DB_PORT", 3306),
+            "db_name": os.getenv("DB_NAME", "").strip(),
+        })
+    else:
+        stat = DB_PATH.stat() if DB_PATH.exists() else None
+        response.update({
+            "db_path": str(DB_PATH),
+            "db_exists": DB_PATH.exists(),
+            "db_size": stat.st_size if stat else 0,
+            "db_mtime": stat.st_mtime if stat else None,
+            "sqlite_db_path_env": os.getenv("SQLITE_DB_PATH", ""),
+        })
+    return response
 
 
 @app.post("/api/v1/auth/send-code")
@@ -545,15 +796,9 @@ def sync_user_state(payload: SyncStateRequest, authorization: str | None = Heade
     stamp = now_ts()
     with db_connect() as conn:
         if isinstance(payload.merchant_profile, dict) and payload.merchant_profile:
-            conn.execute(
-                "INSERT INTO merchant_profiles (user_id, profile_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET profile_json=excluded.profile_json, updated_at=excluded.updated_at",
-                (user["id"], json.dumps(payload.merchant_profile, ensure_ascii=False), stamp),
-            )
+            upsert_user_json(conn, "merchant_profiles", "profile_json", user["id"], payload.merchant_profile, stamp)
         if isinstance(payload.draft, dict) and payload.draft:
-            conn.execute(
-                "INSERT INTO drafts (user_id, draft_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET draft_json=excluded.draft_json, updated_at=excluded.updated_at",
-                (user["id"], json.dumps(payload.draft, ensure_ascii=False), stamp),
-            )
+            upsert_user_json(conn, "drafts", "draft_json", user["id"], payload.draft, stamp)
         if isinstance(payload.history, list):
             conn.execute("DELETE FROM histories WHERE user_id = ?", (user["id"],))
             for item in payload.history[-10:]:
@@ -569,10 +814,7 @@ def sync_user_state(payload: SyncStateRequest, authorization: str | None = Heade
 def save_cloud_merchant_profile(payload: SaveMerchantProfileRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     user = current_user(authorization)
     with db_connect() as conn:
-        conn.execute(
-            "INSERT INTO merchant_profiles (user_id, profile_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET profile_json=excluded.profile_json, updated_at=excluded.updated_at",
-            (user["id"], json.dumps(payload.profile, ensure_ascii=False), now_ts()),
-        )
+        upsert_user_json(conn, "merchant_profiles", "profile_json", user["id"], payload.profile, now_ts())
     return {"ok": True}
 
 
@@ -580,10 +822,7 @@ def save_cloud_merchant_profile(payload: SaveMerchantProfileRequest, authorizati
 def save_cloud_draft(payload: SaveDraftRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     user = current_user(authorization)
     with db_connect() as conn:
-        conn.execute(
-            "INSERT INTO drafts (user_id, draft_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET draft_json=excluded.draft_json, updated_at=excluded.updated_at",
-            (user["id"], json.dumps(payload.draft, ensure_ascii=False), now_ts()),
-        )
+        upsert_user_json(conn, "drafts", "draft_json", user["id"], payload.draft, now_ts())
     return {"ok": True}
 
 
