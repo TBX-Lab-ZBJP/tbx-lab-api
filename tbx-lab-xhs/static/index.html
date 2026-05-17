@@ -923,6 +923,145 @@
       border-radius: 8px;
       background: #fafafa;
     }
+    .renew-banner {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+      padding: 12px 14px;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-weight: 900;
+    }
+    .renew-banner.active { display: flex; }
+    .order-grid,
+    .qr-grid,
+    .admin-summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .admin-summary {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .qr-box,
+    .admin-stat {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+      background: #fafafa;
+      text-align: center;
+    }
+    .qr-box img {
+      width: 180px;
+      max-width: 100%;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+    }
+    .payment-preview {
+      max-width: 220px;
+      max-height: 220px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      margin-top: 10px;
+      display: none;
+    }
+    .payment-preview.active { display: block; }
+    .order-status {
+      display: inline-flex;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #3157ff;
+      font-weight: 900;
+      font-size: 12px;
+    }
+    .order-list,
+    .admin-order-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .order-item,
+    .admin-order-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+      background: #ffffff;
+    }
+    .order-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      color: #667085;
+      font-size: 13px;
+      margin-top: 6px;
+    }
+    .payment-title {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .payment-amount {
+      color: #3157ff;
+      font-size: 28px;
+      font-weight: 950;
+    }
+    .payment-upload {
+      border: 1px dashed #cbd5e1;
+      border-radius: 8px;
+      padding: 12px;
+      background: #f8fafc;
+      margin-top: 12px;
+    }
+    .admin-page {
+      display: none;
+      padding: 24px;
+      min-height: 100vh;
+      background: #f7f8fb;
+    }
+    .admin-page.active { display: block; }
+    .admin-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .admin-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+    }
+    .admin-tabs button.active {
+      background: #3157ff;
+      color: #ffffff;
+      border-color: #3157ff;
+    }
+    .screenshot-thumb {
+      width: 72px;
+      height: 72px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+      cursor: pointer;
+    }
+    .screenshot-full {
+      max-width: 100%;
+      max-height: 72vh;
+      display: block;
+      margin: 0 auto;
+      border-radius: 8px;
+      border: 1px solid #e5e7eb;
+    }
     .toast {
       position: fixed;
       right: 22px;
@@ -959,6 +1098,11 @@
       }
       .grid-2, .collect-form, .topic-prompts, .modal-grid { grid-template-columns: 1fr; }
       .plan-grid { grid-template-columns: 1fr; }
+      .order-grid, .qr-grid, .admin-summary { grid-template-columns: 1fr; }
+      .order-item, .admin-order-item {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+      }
       .topbar { display: block; }
       h1 { font-size: 24px; line-height: 1.3; }
       h2 { font-size: 18px; }
@@ -1495,6 +1639,7 @@
       </header>
       <button class="mobile-drawer-item" onclick="closeMobileDrawer(); openMerchantModal()">🏪 商家档案</button>
       <button class="mobile-drawer-item" onclick="closeMobileDrawer(); openPlansModal()">💳 套餐管理</button>
+      <button class="mobile-drawer-item" onclick="closeMobileDrawer(); openOrdersModal()">我的订单</button>
       <button class="mobile-drawer-item" onclick="closeMobileDrawer(); openHistoryModal()">📋 历史记录</button>
       <button class="mobile-drawer-item" onclick="closeMobileDrawer(); logout()">退出登录</button>
     </div>
@@ -1511,6 +1656,7 @@
         <button data-step="review" onclick="show('review', this)">04 素材产出</button>
       </div>
       <button class="history-button" onclick="openPlansModal()">💳 套餐管理</button>
+      <button class="history-button" onclick="openOrdersModal()">我的订单</button>
       <button class="history-button" onclick="openHistoryModal()">📋 历史记录</button>
       <div class="side-note">内部工具：生成内容仅作为素材产出前素材，不自动发布。</div>
     </aside>
@@ -1528,9 +1674,14 @@
             <span class="quota-text" id="quotaText">剩余 0 次</span>
           </div>
           <button class="btn ghost" onclick="openPlansModal()">套餐管理</button>
+          <button class="btn ghost" onclick="openOrdersModal()">我的订单</button>
           <button class="btn ghost" onclick="openMerchantModal()">🏪 商家档案</button>
           <button class="btn ghost" onclick="logout()">退出</button>
         </div>
+      </div>
+      <div id="renewBanner" class="renew-banner">
+        <span id="renewText">您的套餐即将到期</span>
+        <button class="btn" onclick="openPlansModal()">立即续费 →</button>
       </div>
       <div id="restoreBanner" class="restore-banner">
         <span id="restoreText"></span>
@@ -1696,6 +1847,29 @@
     </main>
   </div>
 
+  <div class="admin-page" id="adminPage">
+    <div class="admin-card">
+      <h1>订单管理</h1>
+      <div id="adminAccessMessage" class="muted">正在校验管理员权限。</div>
+    </div>
+    <div id="adminContent" class="hidden">
+      <div class="admin-summary">
+        <div class="admin-stat"><strong id="adminTodayOrders">0</strong><br><span class="muted">今日新增订单</span></div>
+        <div class="admin-stat"><strong id="adminPendingOrders">0</strong><br><span class="muted">待确认订单</span></div>
+        <div class="admin-stat"><strong id="adminTodayRevenue">0</strong><br><span class="muted">今日营收</span></div>
+      </div>
+      <div class="admin-card">
+        <div class="admin-tabs">
+          <button class="btn ghost active" data-admin-status="paid_pending" onclick="loadAdminOrders('paid_pending', this)">待确认</button>
+          <button class="btn ghost" data-admin-status="confirmed" onclick="loadAdminOrders('confirmed', this)">已开通</button>
+          <button class="btn ghost" data-admin-status="cancelled" onclick="loadAdminOrders('cancelled', this)">已取消</button>
+          <button class="btn ghost" data-admin-status="all" onclick="loadAdminOrders('all', this)">全部</button>
+        </div>
+        <div id="adminOrdersList" class="admin-order-list"></div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="merchantModal">
     <div class="modal">
       <h2>商家档案</h2>
@@ -1778,10 +1952,58 @@
   <div class="modal-backdrop" id="plansModal">
     <div class="modal" style="width:min(980px,100%)">
       <h2>套餐管理</h2>
-      <div class="muted">当前阶段只展示套餐，支付和升级会在 Stage 7 接入。</div>
+      <div class="muted">选择套餐后进入扫码付款，管理员确认后自动开通。</div>
       <div id="plansList" class="plan-grid"></div>
       <div class="actions" style="margin-top:16px">
         <button class="btn ghost" onclick="closePlansModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="paymentModal">
+    <div class="modal" style="width:min(860px,100%)">
+      <h2>订单付款</h2>
+      <div id="paymentOrderInfo" class="payment-title"></div>
+      <div class="qr-grid">
+        <div class="qr-box">
+          <h3>微信收款码</h3>
+          <img id="paymentWechatQr" src="/static/qr/wechat.png" alt="微信收款码">
+        </div>
+        <div class="qr-box">
+          <h3>支付宝收款码</h3>
+          <img id="paymentAlipayQr" src="/static/qr/alipay.png" alt="支付宝收款码">
+        </div>
+      </div>
+      <div class="payment-upload">
+        <strong>上传付款截图</strong>
+        <div class="muted">请扫码付款后上传截图，单张不超过 2MB。</div>
+        <input id="paymentFile" type="file" accept="image/*" onchange="handlePaymentFile(event)">
+        <img id="paymentPreview" class="payment-preview" alt="付款截图预览">
+      </div>
+      <div class="actions" style="margin-top:16px">
+        <button class="btn" onclick="submitPayment()">提交订单</button>
+        <button class="btn ghost" onclick="closePaymentModal()">取消</button>
+      </div>
+      <div class="muted" style="margin-top:10px">提交后进入“待管理员确认”，通常 30 分钟内处理。</div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="ordersModal">
+    <div class="modal" style="width:min(900px,100%)">
+      <h2>我的订单</h2>
+      <div id="ordersList" class="order-list"></div>
+      <div class="actions" style="margin-top:16px">
+        <button class="btn ghost" onclick="closeOrdersModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="screenshotModal">
+    <div class="modal" style="width:min(900px,100%)">
+      <h2>付款截图</h2>
+      <img id="screenshotFull" class="screenshot-full" alt="付款截图">
+      <div class="actions" style="margin-top:16px">
+        <button class="btn ghost" onclick="closeScreenshotModal()">关闭</button>
       </div>
     </div>
   </div>
@@ -1815,6 +2037,9 @@
     let posterTouchStartX = 0;
     let currentUser = null;
     let plansCache = [];
+    let currentOrder = null;
+    let paymentScreenshotBase64 = "";
+    let currentAdminStatus = "paid_pending";
 
     function authHeaders() {
       const token = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -1911,7 +2136,22 @@
       document.getElementById("userNickname").textContent = currentUser.nickname || "用户";
       document.getElementById("quotaText").textContent = `剩余 ${currentUser.quota_remaining ?? 0} 次`;
       updateGenerateButtonQuota();
+      renderRenewBanner();
       renderPlans();
+    }
+
+    function renderRenewBanner() {
+      const banner = document.getElementById("renewBanner");
+      const text = document.getElementById("renewText");
+      if (!banner || !currentUser) return;
+      const days = Number(currentUser.days_until_expire || 0);
+      const planId = Number(currentUser.current_plan_id || 1);
+      if (planId > 1 && days > 0 && days <= 7) {
+        text.textContent = `您的套餐还有 ${days} 天到期，立即续费 →`;
+        banner.classList.add("active");
+      } else {
+        banner.classList.remove("active");
+      }
     }
 
     function updateGenerateButtonQuota() {
@@ -3117,9 +3357,224 @@
           <div class="plan-price">${price === 0 ? "0" : price} 元</div>
           <div class="muted">${plan.duration_days} 天有效 · ${plan.quota} 次额度</div>
           <ul>${(plan.features || []).map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-          <button class="btn ${isCurrent ? "ghost" : ""}" ${isCurrent ? "disabled" : ""} onclick="alert('敬请期待 Stage 7')">${isCurrent ? "当前套餐" : "立即购买"}</button>
+          <button class="btn ${isCurrent || price === 0 ? "ghost" : ""}" ${isCurrent || price === 0 ? "disabled" : ""} onclick="startPlanPurchase(${Number(plan.id || 0)})">${isCurrent ? "当前套餐" : (price === 0 ? "免费试用" : "立即购买")}</button>
         </div>`;
       }).join("");
+    }
+
+    function statusLabel(status) {
+      const labels = {
+        pending: "待付款",
+        paid_pending: "待管理员确认",
+        confirmed: "已开通",
+        cancelled: "已取消",
+        refunded: "已退款"
+      };
+      return labels[status] || status || "-";
+    }
+
+    function formatDateTime(value) {
+      const date = value ? new Date(value) : null;
+      if (!date || Number.isNaN(date.getTime())) return "-";
+      return date.toLocaleString();
+    }
+
+    async function startPlanPurchase(planId) {
+      if (!planId) return alert("套餐信息异常，请刷新后重试");
+      try {
+        const order = await apiPost("/api/v1/orders/create", { plan_id: planId });
+        closePlansModal();
+        openPaymentModal(order);
+      } catch (error) {
+        alert(error.message || "创建订单失败");
+      }
+    }
+
+    function openPaymentModal(order) {
+      currentOrder = order;
+      paymentScreenshotBase64 = "";
+      const info = document.getElementById("paymentOrderInfo");
+      info.innerHTML = `
+        <strong>订单号：${escapeHtml(order.order_no || "")}</strong>
+        <span>套餐：${escapeHtml(order.plan_name || "")}</span>
+        <span class="payment-amount">¥${Number(order.amount || 0).toFixed(2)}</span>
+        <span class="muted">请在 ${formatDateTime(order.expire_at)} 前完成付款。</span>
+      `;
+      document.getElementById("paymentWechatQr").src = order.wechat_qr_url || "/static/qr/wechat.png";
+      document.getElementById("paymentAlipayQr").src = order.alipay_qr_url || "/static/qr/alipay.png";
+      document.getElementById("paymentFile").value = "";
+      document.getElementById("paymentPreview").classList.remove("active");
+      document.getElementById("paymentPreview").removeAttribute("src");
+      document.getElementById("paymentModal").classList.add("active");
+    }
+
+    function closePaymentModal() {
+      document.getElementById("paymentModal").classList.remove("active");
+    }
+
+    function handlePaymentFile(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) {
+        event.target.value = "";
+        return alert("付款截图不能超过 2MB");
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        paymentScreenshotBase64 = String(reader.result || "");
+        const preview = document.getElementById("paymentPreview");
+        preview.src = paymentScreenshotBase64;
+        preview.classList.add("active");
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function submitPayment() {
+      if (!currentOrder?.order_no) return alert("订单信息异常，请重新选择套餐");
+      if (!paymentScreenshotBase64) return alert("请先上传付款截图");
+      try {
+        await apiPost(`/api/v1/orders/${encodeURIComponent(currentOrder.order_no)}/submit-payment`, {
+          screenshot_base64: paymentScreenshotBase64
+        });
+        closePaymentModal();
+        showToast("已提交，等待管理员确认");
+        openOrdersModal();
+      } catch (error) {
+        alert(error.message || "提交订单失败");
+      }
+    }
+
+    async function openOrdersModal() {
+      try {
+        const data = await apiGet("/api/v1/orders");
+        renderOrders(data.orders || []);
+        document.getElementById("ordersModal").classList.add("active");
+      } catch (error) {
+        alert(error.message || "订单加载失败");
+      }
+    }
+
+    function closeOrdersModal() {
+      document.getElementById("ordersModal").classList.remove("active");
+    }
+
+    function renderOrders(orders) {
+      const box = document.getElementById("ordersList");
+      if (!orders.length) {
+        box.innerHTML = `<div class="muted">还没有订单。</div>`;
+        return;
+      }
+      box.innerHTML = orders.map(order => {
+        const canPay = order.status === "pending";
+        return `<div class="order-item">
+          <div>
+            <strong>${escapeHtml(order.plan_name || "套餐")}</strong>
+            <span class="order-status">${statusLabel(order.status)}</span>
+            <div class="order-meta">
+              <span>${escapeHtml(order.order_no || "")}</span>
+              <span>¥${Number(order.amount || 0).toFixed(2)}</span>
+              <span>${formatDateTime(order.created_at)}</span>
+              ${order.status === "confirmed" ? `<span>开通时间：${formatDateTime(order.confirmed_at)}</span>` : ""}
+            </div>
+          </div>
+          <div class="actions">
+            ${canPay ? `<button class="btn" onclick='openPaymentModal(${JSON.stringify(order)})'>继续付款</button>` : ""}
+          </div>
+        </div>`;
+      }).join("");
+    }
+
+    function showScreenshot(src) {
+      if (!src) return;
+      document.getElementById("screenshotFull").src = src;
+      document.getElementById("screenshotModal").classList.add("active");
+    }
+
+    function closeScreenshotModal() {
+      document.getElementById("screenshotModal").classList.remove("active");
+    }
+
+    async function loadAdminPage() {
+      document.querySelector(".app").style.display = "none";
+      document.getElementById("mobileHeader").style.display = "none";
+      document.getElementById("mobileTabbar").style.display = "none";
+      document.getElementById("adminPage").classList.add("active");
+      const message = document.getElementById("adminAccessMessage");
+      if (!currentUser?.is_admin) {
+        message.textContent = "无权限访问";
+        return;
+      }
+      message.textContent = "已进入管理员订单后台";
+      document.getElementById("adminContent").classList.remove("hidden");
+      await loadAdminOrders("paid_pending");
+    }
+
+    async function loadAdminOrders(status = "paid_pending", button) {
+      currentAdminStatus = status;
+      document.querySelectorAll(".admin-tabs button").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.adminStatus === status);
+      });
+      try {
+        const data = await apiGet(`/api/v1/admin/orders?status=${encodeURIComponent(status)}&page=1&size=50`);
+        document.getElementById("adminTodayOrders").textContent = data.summary?.today_orders || 0;
+        document.getElementById("adminPendingOrders").textContent = data.summary?.pending_count || 0;
+        document.getElementById("adminTodayRevenue").textContent = `¥${Number(data.summary?.today_revenue || 0).toFixed(2)}`;
+        renderAdminOrders(data.orders || []);
+      } catch (error) {
+        document.getElementById("adminOrdersList").innerHTML = `<div class="muted">${escapeHtml(error.message || "订单加载失败")}</div>`;
+      }
+    }
+
+    function renderAdminOrders(orders) {
+      const box = document.getElementById("adminOrdersList");
+      if (!orders.length) {
+        box.innerHTML = `<div class="muted">当前筛选下没有订单。</div>`;
+        return;
+      }
+      box.innerHTML = orders.map(order => {
+        const screenshot = order.payment_screenshot || "";
+        const canConfirm = order.status === "paid_pending";
+        return `<div class="admin-order-item">
+          <div>
+            <strong>${escapeHtml(order.phone || order.nickname || "用户")}</strong>
+            <span class="order-status">${statusLabel(order.status)}</span>
+            <div class="order-meta">
+              <span>${escapeHtml(order.order_no || "")}</span>
+              <span>${escapeHtml(order.plan_name || "")}</span>
+              <span>¥${Number(order.amount || 0).toFixed(2)}</span>
+              <span>付款：${formatDateTime(order.paid_at)}</span>
+            </div>
+          </div>
+          <div class="actions">
+            ${screenshot ? `<img class="screenshot-thumb" src="${screenshot}" onclick="showScreenshot('${screenshot.replaceAll("'", "\\'")}')" alt="付款截图">` : ""}
+            ${canConfirm ? `<button class="btn" onclick="confirmAdminOrder('${escapeHtml(order.order_no)}')">确认开通</button>
+            <button class="btn ghost" onclick="rejectAdminOrder('${escapeHtml(order.order_no)}')">拒绝</button>` : ""}
+          </div>
+        </div>`;
+      }).join("");
+    }
+
+    async function confirmAdminOrder(orderNo) {
+      if (!confirm("确认该订单已收款并开通套餐？")) return;
+      try {
+        await apiPost(`/api/v1/admin/orders/${encodeURIComponent(orderNo)}/confirm`, {});
+        showToast("已确认开通");
+        await loadAdminOrders(currentAdminStatus);
+      } catch (error) {
+        alert(error.message || "确认失败");
+      }
+    }
+
+    async function rejectAdminOrder(orderNo) {
+      const reason = prompt("请输入拒绝原因", "截图无效或金额不符");
+      if (reason === null) return;
+      try {
+        await apiPost(`/api/v1/admin/orders/${encodeURIComponent(orderNo)}/reject`, { reason });
+        showToast("已拒绝订单");
+        await loadAdminOrders(currentAdminStatus);
+      } catch (error) {
+        alert(error.message || "拒绝失败");
+      }
     }
 
     async function copyHistoryDetail() {
@@ -3197,6 +3652,10 @@
     window.addEventListener("DOMContentLoaded", async () => {
       await initAuth();
       if (!currentUser) return;
+      if (location.pathname === "/admin") {
+        await loadAdminPage();
+        return;
+      }
       restoreDraft();
       updateProgress();
       if (!getMerchantProfile()) {

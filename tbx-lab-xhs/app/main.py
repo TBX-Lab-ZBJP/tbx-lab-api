@@ -100,6 +100,7 @@ PRIVATE_MESSAGE_TEMPLATES = {
 
 DEFAULT_PLANS = [
     {
+        "id": 1,
         "code": "free",
         "name": "免费试用",
         "price_cents": 0,
@@ -109,6 +110,7 @@ DEFAULT_PLANS = [
         "is_recommended": 0,
     },
     {
+        "id": 2,
         "code": "monthly",
         "name": "月卡",
         "price_cents": 9900,
@@ -118,6 +120,7 @@ DEFAULT_PLANS = [
         "is_recommended": 0,
     },
     {
+        "id": 3,
         "code": "quarterly",
         "name": "季卡",
         "price_cents": 25800,
@@ -127,6 +130,7 @@ DEFAULT_PLANS = [
         "is_recommended": 0,
     },
     {
+        "id": 4,
         "code": "yearly",
         "name": "年卡",
         "price_cents": 88800,
@@ -251,6 +255,15 @@ class DatabaseConnection:
             if statement:
                 self.execute(statement)
 
+    def begin(self) -> None:
+        self.execute("START TRANSACTION" if self.is_mysql else "BEGIN")
+
+    def commit(self) -> None:
+        self.execute("COMMIT" if self.is_mysql else "COMMIT")
+
+    def rollback(self) -> None:
+        self.execute("ROLLBACK" if self.is_mysql else "ROLLBACK")
+
 
 def db_connect() -> DatabaseConnection:
     return DatabaseConnection()
@@ -272,8 +285,56 @@ def now_ts() -> int:
     return int(time.time())
 
 
+def iso_from_ts(value: Any) -> str:
+    ts = int(value or 0)
+    if ts <= 0:
+        return ""
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ts))
+
+
 def row_to_dict(row: Any | None) -> dict[str, Any] | None:
     return dict(row) if row else None
+
+
+def table_columns(conn: DatabaseConnection, table: str) -> set[str]:
+    try:
+        if is_mysql():
+            rows = conn.execute(f"SHOW COLUMNS FROM {table}").fetchall()
+            return {str(row.get("Field")) for row in rows}
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+        return {str(row["name"]) for row in rows}
+    except Exception:
+        return set()
+
+
+def ensure_column(conn: DatabaseConnection, table: str, column: str, ddl: str) -> None:
+    if column not in table_columns(conn, table):
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
+
+def migrate_existing_schema(conn: DatabaseConnection) -> None:
+    ensure_column(conn, "users", "current_plan_id", "current_plan_id BIGINT NOT NULL DEFAULT 1" if is_mysql() else "current_plan_id INTEGER NOT NULL DEFAULT 1")
+    ensure_column(conn, "users", "plan_expire_at", "plan_expire_at BIGINT NOT NULL DEFAULT 0" if is_mysql() else "plan_expire_at INTEGER NOT NULL DEFAULT 0")
+    ensure_column(conn, "users", "is_admin", "is_admin TINYINT NOT NULL DEFAULT 0" if is_mysql() else "is_admin INTEGER NOT NULL DEFAULT 0")
+    ensure_column(conn, "plans", "id", "id BIGINT UNIQUE" if is_mysql() else "id INTEGER UNIQUE")
+    ensure_column(conn, "orders", "user_id", "user_id VARCHAR(64) NOT NULL DEFAULT ''" if is_mysql() else "user_id TEXT NOT NULL DEFAULT ''")
+    ensure_column(conn, "orders", "plan_id", "plan_id BIGINT NOT NULL DEFAULT 0" if is_mysql() else "plan_id INTEGER NOT NULL DEFAULT 0")
+    ensure_column(conn, "orders", "amount", "amount DECIMAL(10,2) NOT NULL DEFAULT 0" if is_mysql() else "amount REAL NOT NULL DEFAULT 0")
+    ensure_column(conn, "orders", "status", "status VARCHAR(32) NOT NULL DEFAULT 'pending'" if is_mysql() else "status TEXT NOT NULL DEFAULT 'pending'")
+    ensure_column(conn, "orders", "pay_method", "pay_method VARCHAR(32) NOT NULL DEFAULT 'manual'" if is_mysql() else "pay_method TEXT NOT NULL DEFAULT 'manual'")
+    ensure_column(conn, "orders", "payment_screenshot", "payment_screenshot TEXT")
+    ensure_column(conn, "orders", "remark", "remark TEXT")
+    ensure_column(conn, "orders", "created_at", "created_at BIGINT NOT NULL DEFAULT 0" if is_mysql() else "created_at INTEGER NOT NULL DEFAULT 0")
+    ensure_column(conn, "orders", "paid_at", "paid_at BIGINT" if is_mysql() else "paid_at INTEGER")
+    ensure_column(conn, "orders", "confirmed_at", "confirmed_at BIGINT" if is_mysql() else "confirmed_at INTEGER")
+    ensure_column(conn, "orders", "confirmed_by", "confirmed_by VARCHAR(64)" if is_mysql() else "confirmed_by TEXT")
+    ensure_column(conn, "subscriptions", "user_id", "user_id VARCHAR(64) NOT NULL DEFAULT ''" if is_mysql() else "user_id TEXT NOT NULL DEFAULT ''")
+    ensure_column(conn, "subscriptions", "plan_id", "plan_id BIGINT NOT NULL DEFAULT 0" if is_mysql() else "plan_id INTEGER NOT NULL DEFAULT 0")
+    ensure_column(conn, "subscriptions", "order_id", "order_id BIGINT" if is_mysql() else "order_id INTEGER")
+    ensure_column(conn, "subscriptions", "start_at", "start_at BIGINT NOT NULL DEFAULT 0" if is_mysql() else "start_at INTEGER NOT NULL DEFAULT 0")
+    ensure_column(conn, "subscriptions", "end_at", "end_at BIGINT NOT NULL DEFAULT 0" if is_mysql() else "end_at INTEGER NOT NULL DEFAULT 0")
+    ensure_column(conn, "subscriptions", "status", "status VARCHAR(32) NOT NULL DEFAULT 'active'" if is_mysql() else "status TEXT NOT NULL DEFAULT 'active'")
+    ensure_column(conn, "subscriptions", "created_at", "created_at BIGINT NOT NULL DEFAULT 0" if is_mysql() else "created_at INTEGER NOT NULL DEFAULT 0")
 
 
 def init_db() -> None:
@@ -283,6 +344,9 @@ def init_db() -> None:
         phone TEXT NOT NULL UNIQUE,
         nickname TEXT NOT NULL,
         plan_code TEXT NOT NULL DEFAULT 'free',
+        current_plan_id INTEGER NOT NULL DEFAULT 1,
+        plan_expire_at INTEGER NOT NULL DEFAULT 0,
+        is_admin INTEGER NOT NULL DEFAULT 0,
         quota_remaining INTEGER NOT NULL DEFAULT 5,
         trial_started_at INTEGER NOT NULL,
         trial_expires_at INTEGER NOT NULL,
@@ -290,6 +354,7 @@ def init_db() -> None:
         updated_at INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS plans (
+        id INTEGER UNIQUE,
         code TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         price_cents INTEGER NOT NULL,
@@ -323,6 +388,38 @@ def init_db() -> None:
         history_json TEXT NOT NULL,
         created_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_no TEXT NOT NULL UNIQUE,
+        user_id TEXT NOT NULL,
+        plan_id INTEGER NOT NULL,
+        amount REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        pay_method TEXT NOT NULL DEFAULT 'manual',
+        payment_screenshot TEXT,
+        remark TEXT,
+        created_at INTEGER NOT NULL,
+        paid_at INTEGER,
+        confirmed_at INTEGER,
+        confirmed_by TEXT
+    );
+    CREATE TABLE IF NOT EXISTS subscriptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        plan_id INTEGER NOT NULL,
+        order_id INTEGER,
+        start_at INTEGER NOT NULL,
+        end_at INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS operation_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT,
+        action TEXT NOT NULL,
+        detail_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+    );
     """
     mysql_schema = """
     CREATE TABLE IF NOT EXISTS users (
@@ -330,6 +427,9 @@ def init_db() -> None:
         phone VARCHAR(20) NOT NULL UNIQUE,
         nickname VARCHAR(64) NOT NULL,
         plan_code VARCHAR(32) NOT NULL DEFAULT 'free',
+        current_plan_id BIGINT NOT NULL DEFAULT 1,
+        plan_expire_at BIGINT NOT NULL DEFAULT 0,
+        is_admin TINYINT NOT NULL DEFAULT 0,
         quota_remaining INT NOT NULL DEFAULT 5,
         trial_started_at BIGINT NOT NULL,
         trial_expires_at BIGINT NOT NULL,
@@ -337,6 +437,7 @@ def init_db() -> None:
         updated_at BIGINT NOT NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
     CREATE TABLE IF NOT EXISTS plans (
+        id BIGINT UNIQUE,
         code VARCHAR(32) PRIMARY KEY,
         name VARCHAR(64) NOT NULL,
         price_cents INT NOT NULL,
@@ -372,17 +473,55 @@ def init_db() -> None:
         created_at BIGINT NOT NULL,
         INDEX idx_histories_user_id (user_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    CREATE TABLE IF NOT EXISTS orders (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        order_no VARCHAR(64) NOT NULL UNIQUE,
+        user_id VARCHAR(64) NOT NULL,
+        plan_id BIGINT NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        status ENUM('pending', 'paid_pending', 'confirmed', 'cancelled', 'refunded') NOT NULL DEFAULT 'pending',
+        pay_method VARCHAR(32) NOT NULL DEFAULT 'manual',
+        payment_screenshot TEXT,
+        remark TEXT,
+        created_at BIGINT NOT NULL,
+        paid_at BIGINT,
+        confirmed_at BIGINT,
+        confirmed_by VARCHAR(64),
+        INDEX idx_orders_user_id (user_id),
+        INDEX idx_orders_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    CREATE TABLE IF NOT EXISTS subscriptions (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        user_id VARCHAR(64) NOT NULL,
+        plan_id BIGINT NOT NULL,
+        order_id BIGINT,
+        start_at BIGINT NOT NULL,
+        end_at BIGINT NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'active',
+        created_at BIGINT NOT NULL,
+        INDEX idx_subscriptions_user_id (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    CREATE TABLE IF NOT EXISTS operation_logs (
+        id BIGINT PRIMARY KEY AUTO_INCREMENT,
+        user_id VARCHAR(64),
+        action VARCHAR(64) NOT NULL,
+        detail_json TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        INDEX idx_operation_logs_action (action)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
     """
     try:
         with db_connect() as conn:
             conn.executescript(mysql_schema if is_mysql() else sqlite_schema)
+            migrate_existing_schema(conn)
             for plan in DEFAULT_PLANS:
                 if is_mysql():
                     conn.execute(
                         """
-                        INSERT INTO plans (code, name, price_cents, duration_days, quota, features_json, is_recommended)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO plans (id, code, name, price_cents, duration_days, quota, features_json, is_recommended)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ON DUPLICATE KEY UPDATE
+                            id=VALUES(id),
                             name=VALUES(name),
                             price_cents=VALUES(price_cents),
                             duration_days=VALUES(duration_days),
@@ -391,6 +530,7 @@ def init_db() -> None:
                             is_recommended=VALUES(is_recommended)
                         """,
                         (
+                            plan["id"],
                             plan["code"],
                             plan["name"],
                             plan["price_cents"],
@@ -403,9 +543,10 @@ def init_db() -> None:
                 else:
                     conn.execute(
                         """
-                        INSERT INTO plans (code, name, price_cents, duration_days, quota, features_json, is_recommended)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO plans (id, code, name, price_cents, duration_days, quota, features_json, is_recommended)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(code) DO UPDATE SET
+                            id=excluded.id,
                             name=excluded.name,
                             price_cents=excluded.price_cents,
                             duration_days=excluded.duration_days,
@@ -414,6 +555,7 @@ def init_db() -> None:
                             is_recommended=excluded.is_recommended
                         """,
                         (
+                            plan["id"],
                             plan["code"],
                             plan["name"],
                             plan["price_cents"],
@@ -494,6 +636,18 @@ class SaveHistoryRequest(BaseModel):
     history: list[Any]
 
 
+class CreateOrderRequest(BaseModel):
+    plan_id: int
+
+
+class SubmitPaymentRequest(BaseModel):
+    screenshot_base64: str
+
+
+class RejectOrderRequest(BaseModel):
+    reason: str = ""
+
+
 def b64url_encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
@@ -544,26 +698,26 @@ def current_user(authorization: str | None) -> dict[str, Any]:
             if is_mysql():
                 conn.execute(
                     """
-                    INSERT INTO users (id, phone, nickname, plan_code, quota_remaining, trial_started_at, trial_expires_at, created_at, updated_at)
-                    VALUES (?, ?, ?, 'free', 5, ?, ?, ?, ?)
+                    INSERT INTO users (id, phone, nickname, plan_code, current_plan_id, plan_expire_at, quota_remaining, trial_started_at, trial_expires_at, created_at, updated_at)
+                    VALUES (?, ?, ?, 'free', 1, ?, 5, ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE
                         id=VALUES(id),
                         nickname=VALUES(nickname),
                         updated_at=VALUES(updated_at)
                     """,
-                    (user_id, phone, nickname, stamp, stamp + 3 * 24 * 3600, stamp, stamp),
+                    (user_id, phone, nickname, stamp + 3 * 24 * 3600, stamp, stamp + 3 * 24 * 3600, stamp, stamp),
                 )
             else:
                 conn.execute(
                     """
-                    INSERT INTO users (id, phone, nickname, plan_code, quota_remaining, trial_started_at, trial_expires_at, created_at, updated_at)
-                    VALUES (?, ?, ?, 'free', 5, ?, ?, ?, ?)
+                    INSERT INTO users (id, phone, nickname, plan_code, current_plan_id, plan_expire_at, quota_remaining, trial_started_at, trial_expires_at, created_at, updated_at)
+                    VALUES (?, ?, ?, 'free', 1, ?, 5, ?, ?, ?, ?)
                     ON CONFLICT(phone) DO UPDATE SET
                         id=excluded.id,
                         nickname=excluded.nickname,
                         updated_at=excluded.updated_at
                     """,
-                    (user_id, phone, nickname, stamp, stamp + 3 * 24 * 3600, stamp, stamp),
+                    (user_id, phone, nickname, stamp + 3 * 24 * 3600, stamp, stamp + 3 * 24 * 3600, stamp, stamp),
                 )
             user = row_to_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
     if not user:
@@ -572,24 +726,31 @@ def current_user(authorization: str | None) -> dict[str, Any]:
 
 
 def public_user(user: dict[str, Any]) -> dict[str, Any]:
+    expire_ts = int(user.get("plan_expire_at") or user.get("trial_expires_at") or 0)
+    days_until_expire = max(0, int((expire_ts - now_ts() + 86399) // 86400)) if expire_ts else 0
     return {
         "id": user["id"],
         "phone": user["phone"],
         "nickname": user["nickname"],
         "plan_code": user["plan_code"],
-        "current_plan_id": user["plan_code"],
+        "current_plan_id": int(user.get("current_plan_id") or 1),
         "quota_remaining": user["quota_remaining"],
         "trial_expires_at": user["trial_expires_at"],
-        "plan_expire_at": user["trial_expires_at"],
+        "plan_expire_at": iso_from_ts(expire_ts),
+        "plan_expire_ts": expire_ts,
+        "days_until_expire": days_until_expire,
+        "is_admin": bool(user.get("is_admin")),
     }
 
 
 def load_plans() -> list[dict[str, Any]]:
     with db_connect() as conn:
         rows = conn.execute("SELECT * FROM plans ORDER BY price_cents ASC").fetchall()
+    plan_rows = [row_to_dict(row) or {} for row in rows]
     return [
         {
             "code": row["code"],
+            "id": int(row.get("id") or 0),
             "name": row["name"],
             "price_cents": row["price_cents"],
             "price": row["price_cents"] // 100,
@@ -598,8 +759,90 @@ def load_plans() -> list[dict[str, Any]]:
             "features": json.loads(row["features_json"]),
             "is_recommended": bool(row["is_recommended"]),
         }
-        for row in rows
+        for row in plan_rows
     ]
+
+
+def get_plan_by_id(conn: DatabaseConnection, plan_id: int) -> dict[str, Any] | None:
+    return row_to_dict(conn.execute("SELECT * FROM plans WHERE id = ?", (plan_id,)).fetchone())
+
+
+def get_plan_code(plan_id: int) -> str:
+    for plan in DEFAULT_PLANS:
+        if int(plan["id"]) == int(plan_id):
+            return str(plan["code"])
+    return "free"
+
+
+def create_order_no() -> str:
+    return f"TBX{time.strftime('%Y%m%d')}{uuid.uuid4().hex[:4].upper()}"
+
+
+def log_operation(conn: DatabaseConnection, user_id: str | None, action: str, detail: dict[str, Any]) -> None:
+    logger.info("money-action action=%s user_id=%s detail=%s", action, user_id, json.dumps(detail, ensure_ascii=False))
+    conn.execute(
+        "INSERT INTO operation_logs (user_id, action, detail_json, created_at) VALUES (?, ?, ?, ?)",
+        (user_id, action, json.dumps(detail, ensure_ascii=False), now_ts()),
+    )
+
+
+def require_admin(authorization: str | None) -> dict[str, Any]:
+    user = current_user(authorization)
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="无权限访问")
+    return user
+
+
+def check_plan_expiry(user: dict[str, Any]) -> dict[str, Any]:
+    expire_ts = int(user.get("plan_expire_at") or user.get("trial_expires_at") or 0)
+    current_plan_id = int(user.get("current_plan_id") or 1)
+    if current_plan_id > 1 and expire_ts and expire_ts < now_ts():
+        with db_connect() as conn:
+            conn.execute(
+                "UPDATE users SET current_plan_id = 1, plan_code = 'free', quota_remaining = 0, updated_at = ? WHERE id = ?",
+                (now_ts(), user["id"]),
+            )
+            conn.execute(
+                "INSERT INTO subscriptions (user_id, plan_id, order_id, start_at, end_at, status, created_at) VALUES (?, ?, ?, ?, ?, 'expired', ?)",
+                (user["id"], current_plan_id, None, int(user.get("trial_started_at") or now_ts()), expire_ts, now_ts()),
+            )
+            log_operation(conn, user["id"], "subscription_expired", {"plan_id": current_plan_id, "expired_at": expire_ts})
+        raise HTTPException(status_code=402, detail="套餐已到期，请续费")
+    return user
+
+
+def format_order_row(order: dict[str, Any], include_screenshot: bool = False) -> dict[str, Any]:
+    data = {
+        "id": order.get("id"),
+        "order_no": order.get("order_no"),
+        "user_id": order.get("user_id"),
+        "phone": order.get("phone", ""),
+        "nickname": order.get("nickname", ""),
+        "plan_id": int(order.get("plan_id") or 0),
+        "plan_name": order.get("plan_name", ""),
+        "amount": float(order.get("amount") or 0),
+        "status": order.get("status"),
+        "pay_method": order.get("pay_method", "manual"),
+        "remark": order.get("remark") or "",
+        "created_at": iso_from_ts(order.get("created_at")),
+        "paid_at": iso_from_ts(order.get("paid_at")),
+        "confirmed_at": iso_from_ts(order.get("confirmed_at")),
+        "confirmed_by": order.get("confirmed_by") or "",
+        "expire_at": iso_from_ts(int(order.get("created_at") or now_ts()) + 3600),
+    }
+    if include_screenshot:
+        data["payment_screenshot"] = order.get("payment_screenshot") or ""
+    return data
+
+
+def format_order_response(order: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **format_order_row({**order, "plan_name": plan.get("name")}),
+        "plan_name": plan.get("name", ""),
+        "amount": float(order.get("amount") or int(plan.get("price_cents") or 0) / 100),
+        "wechat_qr_url": os.getenv("WECHAT_QR_URL", "/static/qr/wechat.png"),
+        "alipay_qr_url": os.getenv("ALIPAY_QR_URL", "/static/qr/alipay.png"),
+    }
 
 
 def upsert_user_json(conn: DatabaseConnection, table: str, json_column: str, user_id: str, value: Any, stamp: int) -> None:
@@ -655,6 +898,11 @@ def home() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/admin")
+def admin_home() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "tbx-lab-xhs"}
@@ -683,7 +931,8 @@ def safe_count(conn: DatabaseConnection, table: str) -> int:
 
 
 @app.get("/api/v1/admin/db-health")
-def db_health() -> dict[str, Any]:
+def db_health(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_admin(authorization)
     db_connected = True
     error = ""
     counts = {
@@ -694,6 +943,8 @@ def db_health() -> dict[str, Any]:
         "histories_count": 0,
         "drafts_count": 0,
         "usage_logs_count": 0,
+        "orders_count": 0,
+        "operation_logs_count": 0,
     }
     try:
         init_db()
@@ -705,6 +956,8 @@ def db_health() -> dict[str, Any]:
             counts["histories_count"] = safe_count(conn, "histories")
             counts["drafts_count"] = safe_count(conn, "drafts")
             counts["usage_logs_count"] = safe_count(conn, "usage_logs")
+            counts["orders_count"] = safe_count(conn, "orders")
+            counts["operation_logs_count"] = safe_count(conn, "operation_logs")
     except Exception as exc:
         db_connected = False
         error = str(exc)
@@ -758,10 +1011,10 @@ def login(payload: LoginRequest) -> dict[str, Any]:
             nickname = f"用户{phone[-4:]}"
             conn.execute(
                 """
-                INSERT INTO users (id, phone, nickname, plan_code, quota_remaining, trial_started_at, trial_expires_at, created_at, updated_at)
-                VALUES (?, ?, ?, 'free', 5, ?, ?, ?, ?)
+                INSERT INTO users (id, phone, nickname, plan_code, current_plan_id, plan_expire_at, quota_remaining, trial_started_at, trial_expires_at, created_at, updated_at)
+                VALUES (?, ?, ?, 'free', 1, ?, 5, ?, ?, ?, ?)
                 """,
-                (user_id, phone, nickname, created, created + 3 * 24 * 3600, created, created),
+                (user_id, phone, nickname, created + 3 * 24 * 3600, created, created + 3 * 24 * 3600, created, created),
             )
             user = row_to_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
     return {"token": create_token(user["id"], user["phone"], user["nickname"]), "user": public_user(user), "plans": load_plans()}
@@ -776,6 +1029,145 @@ def me(authorization: str | None = Header(default=None)) -> dict[str, Any]:
 @app.get("/api/v1/plans")
 def plans() -> dict[str, Any]:
     return {"plans": load_plans()}
+
+
+@app.post("/api/v1/orders/create")
+def create_order(payload: CreateOrderRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = current_user(authorization)
+    with db_connect() as conn:
+        plan = get_plan_by_id(conn, int(payload.plan_id))
+        if not plan or int(plan.get("price_cents") or 0) <= 0:
+            raise HTTPException(status_code=400, detail="请选择可购买套餐")
+        existing = row_to_dict(conn.execute(
+            "SELECT * FROM orders WHERE user_id = ? AND plan_id = ? AND status IN ('pending', 'paid_pending') ORDER BY created_at DESC LIMIT 1",
+            (user["id"], int(payload.plan_id)),
+        ).fetchone())
+        if existing:
+            order = existing
+        else:
+            order_no = create_order_no()
+            amount = round(int(plan["price_cents"]) / 100, 2)
+            conn.execute(
+                "INSERT INTO orders (order_no, user_id, plan_id, amount, status, pay_method, created_at) VALUES (?, ?, ?, ?, 'pending', 'manual', ?)",
+                (order_no, user["id"], int(payload.plan_id), amount, now_ts()),
+            )
+            order = row_to_dict(conn.execute("SELECT * FROM orders WHERE order_no = ?", (order_no,)).fetchone()) or {}
+            log_operation(conn, user["id"], "order_create", {"order_no": order_no, "plan_id": int(payload.plan_id), "amount": amount})
+    return format_order_response(order, plan)
+
+
+@app.post("/api/v1/orders/{order_no}/submit-payment")
+def submit_payment(order_no: str, payload: SubmitPaymentRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = current_user(authorization)
+    screenshot = str(payload.screenshot_base64 or "")
+    if not screenshot.startswith("data:image/") or len(screenshot.encode("utf-8")) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="付款截图格式不正确或超过 2MB")
+    with db_connect() as conn:
+        order = row_to_dict(conn.execute("SELECT * FROM orders WHERE order_no = ? AND user_id = ?", (order_no, user["id"])).fetchone())
+        if not order:
+            raise HTTPException(status_code=404, detail="订单不存在")
+        if order["status"] != "pending":
+            raise HTTPException(status_code=400, detail="当前订单状态不能提交付款截图")
+        conn.execute(
+            "UPDATE orders SET status = 'paid_pending', payment_screenshot = ?, paid_at = ? WHERE order_no = ?",
+            (screenshot, now_ts(), order_no),
+        )
+        log_operation(conn, user["id"], "order_submit_payment", {"order_no": order_no, "amount": float(order["amount"])})
+    return {"ok": True, "status": "paid_pending"}
+
+
+@app.get("/api/v1/orders")
+def my_orders(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = current_user(authorization)
+    with db_connect() as conn:
+        rows = conn.execute(
+            "SELECT o.*, p.name AS plan_name, p.duration_days, p.quota FROM orders o LEFT JOIN plans p ON o.plan_id = p.id WHERE o.user_id = ? ORDER BY o.created_at DESC LIMIT 50",
+            (user["id"],),
+        ).fetchall()
+    return {"orders": [format_order_row(row_to_dict(row) or {}) for row in rows]}
+
+
+@app.get("/api/v1/admin/orders")
+def admin_orders(status: str = "paid_pending", page: int = 1, size: int = 20, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_admin(authorization)
+    page = max(1, int(page or 1))
+    size = min(100, max(1, int(size or 20)))
+    offset = (page - 1) * size
+    where = "" if status == "all" else "WHERE o.status = ?"
+    params: list[Any] = [] if status == "all" else [status]
+    with db_connect() as conn:
+        rows = conn.execute(
+            f"SELECT o.*, u.phone, u.nickname, p.name AS plan_name, p.quota, p.duration_days FROM orders o LEFT JOIN users u ON o.user_id = u.id LEFT JOIN plans p ON o.plan_id = p.id {where} ORDER BY o.created_at DESC LIMIT ? OFFSET ?",
+            (*params, size, offset),
+        ).fetchall()
+        today_start = int(time.mktime(time.strptime(time.strftime("%Y-%m-%d"), "%Y-%m-%d")))
+        today_orders = scalar_value(conn.execute("SELECT COUNT(*) AS count FROM orders WHERE created_at >= ?", (today_start,)).fetchone())
+        pending_count = scalar_value(conn.execute("SELECT COUNT(*) AS count FROM orders WHERE status = 'paid_pending'").fetchone())
+        today_revenue = scalar_value(conn.execute("SELECT COALESCE(SUM(amount),0) AS amount FROM orders WHERE status = 'confirmed' AND confirmed_at >= ?", (today_start,)).fetchone())
+    return {
+        "orders": [format_order_row(row_to_dict(row) or {}, include_screenshot=True) for row in rows],
+        "summary": {"today_orders": int(today_orders or 0), "pending_count": int(pending_count or 0), "today_revenue": float(today_revenue or 0)},
+    }
+
+
+@app.get("/api/v1/admin/orders/{order_no}")
+def admin_order_detail(order_no: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_admin(authorization)
+    with db_connect() as conn:
+        row = conn.execute(
+            "SELECT o.*, u.phone, u.nickname, p.name AS plan_name, p.quota, p.duration_days FROM orders o LEFT JOIN users u ON o.user_id = u.id LEFT JOIN plans p ON o.plan_id = p.id WHERE o.order_no = ?",
+            (order_no,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="订单不存在")
+    return {"order": format_order_row(row_to_dict(row) or {}, include_screenshot=True)}
+
+
+@app.post("/api/v1/admin/orders/{order_no}/confirm")
+def admin_confirm_order(order_no: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin = require_admin(authorization)
+    with db_connect() as conn:
+        try:
+            conn.begin()
+            order = row_to_dict(conn.execute("SELECT * FROM orders WHERE order_no = ?", (order_no,)).fetchone())
+            if not order or order["status"] != "paid_pending":
+                raise HTTPException(status_code=400, detail="订单状态不是待确认")
+            plan = get_plan_by_id(conn, int(order["plan_id"]))
+            if not plan:
+                raise HTTPException(status_code=400, detail="套餐不存在")
+            start = now_ts()
+            end = start + int(plan["duration_days"]) * 86400
+            conn.execute(
+                "UPDATE orders SET status = 'confirmed', confirmed_at = ?, confirmed_by = ? WHERE order_no = ?",
+                (start, admin["phone"], order_no),
+            )
+            conn.execute(
+                "INSERT INTO subscriptions (user_id, plan_id, order_id, start_at, end_at, status, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?)",
+                (order["user_id"], int(plan["id"]), int(order["id"]), start, end, start),
+            )
+            conn.execute(
+                "UPDATE users SET current_plan_id = ?, plan_code = ?, plan_expire_at = ?, quota_remaining = ?, updated_at = ? WHERE id = ?",
+                (int(plan["id"]), plan["code"], end, int(plan["quota"]), start, order["user_id"]),
+            )
+            log_operation(conn, order["user_id"], "order_confirm", {"order_no": order_no, "admin": admin["phone"], "amount": float(order["amount"])})
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    return {"ok": True, "status": "confirmed"}
+
+
+@app.post("/api/v1/admin/orders/{order_no}/reject")
+def admin_reject_order(order_no: str, payload: RejectOrderRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin = require_admin(authorization)
+    reason = (payload.reason or "管理员拒绝").strip()
+    with db_connect() as conn:
+        order = row_to_dict(conn.execute("SELECT * FROM orders WHERE order_no = ?", (order_no,)).fetchone())
+        if not order:
+            raise HTTPException(status_code=404, detail="订单不存在")
+        conn.execute("UPDATE orders SET status = 'cancelled', remark = ? WHERE order_no = ?", (reason, order_no))
+        log_operation(conn, order.get("user_id"), "order_reject", {"order_no": order_no, "admin": admin["phone"], "reason": reason})
+    return {"ok": True, "status": "cancelled"}
 
 
 @app.get("/api/v1/user/state")
@@ -1056,6 +1448,7 @@ def scan(payload: ScanRequest) -> dict[str, Any]:
 @app.post("/api/v1/xhs/draft")
 async def draft(payload: DraftRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     user = current_user(authorization)
+    check_plan_expiry(user)
     if int(user.get("quota_remaining") or 0) <= 0:
         raise HTTPException(status_code=403, detail="额度已用完，请升级套餐")
     try:
