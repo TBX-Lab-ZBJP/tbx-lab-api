@@ -1794,6 +1794,7 @@
     const DRAFT_KEY = "tbx_current_draft";
     const HISTORY_KEY = "tbx_history";
     const AUTH_TOKEN_KEY = "tbx_auth_token";
+    const AUTH_PHONE_KEY = "tbx_auth_phone";
     const stepOrder = ["collect", "write", "scan", "review"];
     const styleLabels = {
       style_warm: "🌸 亲切",
@@ -1852,6 +1853,8 @@
         await pullCloudState();
       } catch {
         localStorage.removeItem(AUTH_TOKEN_KEY);
+        localStorage.removeItem(AUTH_PHONE_KEY);
+        clearLocalWorkCache();
         openLoginModal();
       }
     }
@@ -1875,13 +1878,15 @@
       const phone = document.getElementById("loginPhone").value.trim();
       const code = document.getElementById("loginCode").value.trim();
       try {
+        const previousPhone = localStorage.getItem(AUTH_PHONE_KEY);
+        if (previousPhone && previousPhone !== phone) clearLocalWorkCache();
         const data = await apiPost("/api/v1/auth/login", { phone, code });
         localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+        localStorage.setItem(AUTH_PHONE_KEY, data.user?.phone || phone);
         currentUser = data.user;
         plansCache = data.plans || [];
         updateUserArea();
         closeLoginModal();
-        await migrateLocalStateToCloud();
         await pullCloudState();
         showToast("登录成功");
         location.reload();
@@ -1892,9 +1897,8 @@
 
     function logout() {
       localStorage.removeItem(AUTH_TOKEN_KEY);
-      localStorage.removeItem(PROFILE_KEY);
-      localStorage.removeItem(DRAFT_KEY);
-      localStorage.removeItem(HISTORY_KEY);
+      localStorage.removeItem(AUTH_PHONE_KEY);
+      clearLocalWorkCache();
       currentUser = null;
       location.reload();
     }
@@ -1933,24 +1937,30 @@
       localStorage.setItem(key, JSON.stringify(value));
     }
 
-    async function migrateLocalStateToCloud() {
-      await apiPost("/api/v1/user/sync", {
-        merchant_profile: readJson(PROFILE_KEY, null),
-        draft: readJson(DRAFT_KEY, null),
-        history: readJson(HISTORY_KEY, [])
-      });
+    function clearLocalWorkCache() {
+      localStorage.removeItem(PROFILE_KEY);
+      localStorage.removeItem(DRAFT_KEY);
+      localStorage.removeItem(HISTORY_KEY);
     }
 
     async function pullCloudState() {
       const state = await apiGet("/api/v1/user/state");
-      if (state.merchant_profile) writeJson(PROFILE_KEY, state.merchant_profile);
-      if (state.draft) writeJson(DRAFT_KEY, state.draft);
-      if (Array.isArray(state.history)) writeJson(HISTORY_KEY, state.history);
+      if (state.user) {
+        currentUser = state.user;
+        localStorage.setItem(AUTH_PHONE_KEY, state.user.phone || "");
+        updateUserArea();
+      }
+      clearLocalWorkCache();
+      if (state.merchant_profile && Object.keys(state.merchant_profile).length) writeJson(PROFILE_KEY, state.merchant_profile);
+      if (state.draft && Object.keys(state.draft).length) writeJson(DRAFT_KEY, state.draft);
+      const histories = Array.isArray(state.histories) ? state.histories : (Array.isArray(state.history) ? state.history : []);
+      writeJson(HISTORY_KEY, histories.slice().reverse());
     }
 
     async function saveCloud(path, payload) {
-      if (!localStorage.getItem(AUTH_TOKEN_KEY)) return;
-      try { await apiPost(path, payload); } catch {}
+      if (!localStorage.getItem(AUTH_TOKEN_KEY)) return false;
+      await apiPost(path, payload);
+      return true;
     }
 
     function splitLines(text, limit = 5) {
@@ -2009,7 +2019,7 @@
       document.getElementById("merchantModal").classList.remove("active");
     }
 
-    function saveMerchantProfile() {
+    async function saveMerchantProfile() {
       const profile = readMerchantForm();
       const missing = [];
       if (!profile.store_name) missing.push("店名");
@@ -2025,11 +2035,16 @@
         alert(`请补充：${missing.join("、")}`);
         return;
       }
-      writeJson(PROFILE_KEY, profile);
-      saveCloud("/api/v1/user/merchant-profile", { profile });
-      showToast("已保存");
-      closeMerchantModal();
-      saveDraft();
+      try {
+        const saved = await saveCloud("/api/v1/user/merchant-profile", { profile });
+        if (!saved) throw new Error("请先登录后再保存商家档案");
+        writeJson(PROFILE_KEY, profile);
+        showToast("已保存");
+        closeMerchantModal();
+        saveDraft();
+      } catch (error) {
+        alert(error.message || "商家档案保存失败，请稍后重试");
+      }
     }
 
     function showToast(message) {
@@ -2079,11 +2094,15 @@
       };
     }
 
-    function saveDraft() {
+    async function saveDraft() {
       if (isRestoringDraft) return;
       const draft = buildDraftState();
-      writeJson(DRAFT_KEY, draft);
-      saveCloud("/api/v1/user/draft", { draft });
+      try {
+        const saved = await saveCloud("/api/v1/user/draft", { draft });
+        if (saved) writeJson(DRAFT_KEY, draft);
+      } catch (error) {
+        console.warn("cloud draft save failed", error);
+      }
     }
 
     function showRestoreBanner(updatedAt) {
@@ -2832,7 +2851,7 @@
         </div>`;
     }
 
-    function renderPublishPreview() {
+    async function renderPublishPreview() {
       if (!document.getElementById("identityCheck").checked) {
         document.getElementById("reviewHint").textContent = "请先确认未出现站外导流、虚假宣传、过度营销、夸大承诺等限流风险内容。";
         return;
@@ -2844,7 +2863,7 @@
       const publishText = buildPublishText();
       document.getElementById("publishPreview").innerHTML = buildPosterPreviewHtml();
       document.getElementById("materialCopyText").textContent = publishText;
-      archiveCurrent();
+      await archiveCurrent();
     }
 
     function buildPublishText() {
@@ -2981,13 +3000,14 @@
       return Array.isArray(history) ? history : [];
     }
 
-    function saveHistory(history) {
+    async function saveHistory(history) {
       const next = history.slice(-10);
+      const saved = await saveCloud("/api/v1/user/history", { history: next });
+      if (!saved) throw new Error("请先登录后再保存历史记录");
       writeJson(HISTORY_KEY, next);
-      saveCloud("/api/v1/user/history", { history: next });
     }
 
-    function archiveCurrent() {
+    async function archiveCurrent() {
       if (!latestOutput || latestOutput.__archived) return;
       const history = getHistory();
       const selectedTitle = document.getElementById("titleSelect").value || latestOutput.title || "";
@@ -2999,11 +3019,17 @@
         merchant_snapshot: getMerchantProfile(),
         archived_at: new Date().toISOString()
       });
-      saveHistory(history);
-      latestOutput.__archived = true;
-      localStorage.removeItem(DRAFT_KEY);
-      document.getElementById("restoreBanner").classList.remove("active");
-      showToast("已加入历史记录");
+      try {
+        await saveHistory(history);
+        const draftCleared = await saveCloud("/api/v1/user/draft", { draft: {} });
+        if (!draftCleared) throw new Error("请先登录后再归档素材包");
+        latestOutput.__archived = true;
+        localStorage.removeItem(DRAFT_KEY);
+        document.getElementById("restoreBanner").classList.remove("active");
+        showToast("已加入历史记录");
+      } catch (error) {
+        alert(error.message || "历史记录保存失败，请稍后重试");
+      }
     }
 
     function openHistoryModal() {
@@ -3102,10 +3128,10 @@
       showToast("已复制");
     }
 
-    function restoreHistory(id) {
+    async function restoreHistory(id) {
       const item = getHistory().find(entry => entry.id === id);
       if (!item) return;
-      writeJson(DRAFT_KEY, {
+      const restoredDraft = {
         step: "review",
         platform: "小红书",
         lane: item.merchant_snapshot?.category || "餐饮",
@@ -3122,8 +3148,15 @@
         scan_result: item.scan_result || null,
         merchant_snapshot: item.merchant_snapshot || null,
         updated_at: new Date().toISOString()
-      });
-      location.reload();
+      };
+      try {
+        const saved = await saveCloud("/api/v1/user/draft", { draft: restoredDraft });
+        if (!saved) throw new Error("请先登录后再恢复草稿");
+        writeJson(DRAFT_KEY, restoredDraft);
+        location.reload();
+      } catch (error) {
+        alert(error.message || "恢复草稿失败，请稍后重试");
+      }
     }
 
     function relativeTime(iso) {

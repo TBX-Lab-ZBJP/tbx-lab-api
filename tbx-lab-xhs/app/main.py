@@ -577,8 +577,10 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
         "phone": user["phone"],
         "nickname": user["nickname"],
         "plan_code": user["plan_code"],
+        "current_plan_id": user["plan_code"],
         "quota_remaining": user["quota_remaining"],
         "trial_expires_at": user["trial_expires_at"],
+        "plan_expire_at": user["trial_expires_at"],
     }
 
 
@@ -782,11 +784,14 @@ def get_user_state(authorization: str | None = Header(default=None)) -> dict[str
     with db_connect() as conn:
         profile_row = conn.execute("SELECT profile_json FROM merchant_profiles WHERE user_id = ?", (user["id"],)).fetchone()
         draft_row = conn.execute("SELECT draft_json FROM drafts WHERE user_id = ?", (user["id"],)).fetchone()
-        history_rows = conn.execute("SELECT history_json FROM histories WHERE user_id = ? ORDER BY created_at ASC LIMIT 10", (user["id"],)).fetchall()
+        history_rows = conn.execute("SELECT history_json FROM histories WHERE user_id = ? ORDER BY created_at DESC LIMIT 10", (user["id"],)).fetchall()
+    histories = [json.loads(row["history_json"]) for row in history_rows]
     return {
+        "user": public_user(user),
         "merchant_profile": json.loads(profile_row["profile_json"]) if profile_row else None,
         "draft": json.loads(draft_row["draft_json"]) if draft_row else None,
-        "history": [json.loads(row["history_json"]) for row in history_rows],
+        "histories": histories,
+        "history": histories,
     }
 
 
