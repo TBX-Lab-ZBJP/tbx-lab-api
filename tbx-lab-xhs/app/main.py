@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import os
+import random
 import re
 import sqlite3
 import time
@@ -16,6 +17,8 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+from app.sms import send_sms, sms_enabled
 
 try:
     import pymysql
@@ -320,6 +323,8 @@ def migrate_existing_schema(conn: DatabaseConnection) -> None:
     ensure_column(conn, "users", "last_active_at", "last_active_at BIGINT NOT NULL DEFAULT 0" if is_mysql() else "last_active_at INTEGER NOT NULL DEFAULT 0")
     ensure_column(conn, "users", "total_spent", "total_spent DECIMAL(10,2) NOT NULL DEFAULT 0" if is_mysql() else "total_spent REAL NOT NULL DEFAULT 0")
     ensure_column(conn, "users", "token_revoked_at", "token_revoked_at BIGINT NOT NULL DEFAULT 0" if is_mysql() else "token_revoked_at INTEGER NOT NULL DEFAULT 0")
+    ensure_column(conn, "users", "invite_code", "invite_code VARCHAR(16)" if is_mysql() else "invite_code TEXT")
+    ensure_column(conn, "users", "invited_by", "invited_by VARCHAR(64)" if is_mysql() else "invited_by TEXT")
     ensure_column(conn, "plans", "id", "id BIGINT UNIQUE" if is_mysql() else "id INTEGER UNIQUE")
     ensure_column(conn, "orders", "user_id", "user_id VARCHAR(64) NOT NULL DEFAULT ''" if is_mysql() else "user_id TEXT NOT NULL DEFAULT ''")
     ensure_column(conn, "orders", "plan_id", "plan_id BIGINT NOT NULL DEFAULT 0" if is_mysql() else "plan_id INTEGER NOT NULL DEFAULT 0")
@@ -335,6 +340,9 @@ def migrate_existing_schema(conn: DatabaseConnection) -> None:
     ensure_column(conn, "orders", "refund_reason", "refund_reason TEXT")
     ensure_column(conn, "orders", "refund_rejected_reason", "refund_rejected_reason TEXT")
     ensure_column(conn, "orders", "refund_processed_at", "refund_processed_at BIGINT" if is_mysql() else "refund_processed_at INTEGER")
+    ensure_column(conn, "orders", "user_coupon_id", "user_coupon_id BIGINT" if is_mysql() else "user_coupon_id INTEGER")
+    ensure_column(conn, "orders", "original_amount", "original_amount DECIMAL(10,2) NOT NULL DEFAULT 0" if is_mysql() else "original_amount REAL NOT NULL DEFAULT 0")
+    ensure_column(conn, "orders", "discount_amount", "discount_amount DECIMAL(10,2) NOT NULL DEFAULT 0" if is_mysql() else "discount_amount REAL NOT NULL DEFAULT 0")
     ensure_column(conn, "subscriptions", "user_id", "user_id VARCHAR(64) NOT NULL DEFAULT ''" if is_mysql() else "user_id TEXT NOT NULL DEFAULT ''")
     ensure_column(conn, "subscriptions", "plan_id", "plan_id BIGINT NOT NULL DEFAULT 0" if is_mysql() else "plan_id INTEGER NOT NULL DEFAULT 0")
     ensure_column(conn, "subscriptions", "order_id", "order_id BIGINT" if is_mysql() else "order_id INTEGER")
@@ -367,6 +375,8 @@ def init_db() -> None:
         last_active_at INTEGER NOT NULL DEFAULT 0,
         total_spent REAL NOT NULL DEFAULT 0,
         token_revoked_at INTEGER NOT NULL DEFAULT 0,
+        invite_code TEXT UNIQUE,
+        invited_by TEXT,
         quota_remaining INTEGER NOT NULL DEFAULT 5,
         trial_started_at INTEGER NOT NULL,
         trial_expires_at INTEGER NOT NULL,
@@ -424,7 +434,10 @@ def init_db() -> None:
         confirmed_by TEXT,
         refund_reason TEXT,
         refund_rejected_reason TEXT,
-        refund_processed_at INTEGER
+        refund_processed_at INTEGER,
+        user_coupon_id INTEGER,
+        original_amount REAL NOT NULL DEFAULT 0,
+        discount_amount REAL NOT NULL DEFAULT 0
     );
     CREATE TABLE IF NOT EXISTS subscriptions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -448,6 +461,10 @@ def init_db() -> None:
         detail_json TEXT NOT NULL,
         created_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, type TEXT NOT NULL, value REAL NOT NULL, min_amount REAL NOT NULL DEFAULT 0, applicable_plans TEXT, total_quota INTEGER NOT NULL DEFAULT -1, used_count INTEGER NOT NULL DEFAULT 0, start_at INTEGER NOT NULL DEFAULT 0, end_at INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active', created_by TEXT, created_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS user_coupons (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, coupon_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'unused', used_at INTEGER, used_order_no TEXT, received_at INTEGER NOT NULL, expire_at INTEGER);
+    CREATE TABLE IF NOT EXISTS invitations (id INTEGER PRIMARY KEY AUTOINCREMENT, inviter_id TEXT NOT NULL, invitee_id TEXT NOT NULL UNIQUE, invite_code TEXT NOT NULL, reward_to_inviter INTEGER NOT NULL DEFAULT 5, reward_to_invitee INTEGER NOT NULL DEFAULT 5, status TEXT NOT NULL DEFAULT 'pending', rewarded_at INTEGER, created_at INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS verification_codes (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT NOT NULL, code TEXT NOT NULL, expire_at INTEGER NOT NULL, used_at INTEGER, created_at INTEGER NOT NULL);
     """
     mysql_schema = """
     CREATE TABLE IF NOT EXISTS users (
@@ -462,6 +479,8 @@ def init_db() -> None:
         last_active_at BIGINT NOT NULL DEFAULT 0,
         total_spent DECIMAL(10,2) NOT NULL DEFAULT 0,
         token_revoked_at BIGINT NOT NULL DEFAULT 0,
+        invite_code VARCHAR(16) UNIQUE,
+        invited_by VARCHAR(64),
         quota_remaining INT NOT NULL DEFAULT 5,
         trial_started_at BIGINT NOT NULL,
         trial_expires_at BIGINT NOT NULL,
@@ -522,6 +541,9 @@ def init_db() -> None:
         refund_reason TEXT,
         refund_rejected_reason TEXT,
         refund_processed_at BIGINT,
+        user_coupon_id BIGINT,
+        original_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+        discount_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
         INDEX idx_orders_user_id (user_id),
         INDEX idx_orders_status (status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -549,6 +571,10 @@ def init_db() -> None:
         created_at BIGINT NOT NULL,
         INDEX idx_operation_logs_action (action)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    CREATE TABLE IF NOT EXISTS coupons (id BIGINT PRIMARY KEY AUTO_INCREMENT, code VARCHAR(64) NOT NULL UNIQUE, name VARCHAR(128) NOT NULL, type VARCHAR(32) NOT NULL, value DECIMAL(10,2) NOT NULL, min_amount DECIMAL(10,2) NOT NULL DEFAULT 0, applicable_plans JSON, total_quota INT NOT NULL DEFAULT -1, used_count INT NOT NULL DEFAULT 0, start_at BIGINT NOT NULL DEFAULT 0, end_at BIGINT NOT NULL DEFAULT 0, status VARCHAR(32) NOT NULL DEFAULT 'active', created_by VARCHAR(64), created_at BIGINT NOT NULL, INDEX idx_coupons_code (code)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    CREATE TABLE IF NOT EXISTS user_coupons (id BIGINT PRIMARY KEY AUTO_INCREMENT, user_id VARCHAR(64) NOT NULL, coupon_id BIGINT NOT NULL, status VARCHAR(32) NOT NULL DEFAULT 'unused', used_at BIGINT, used_order_no VARCHAR(64), received_at BIGINT NOT NULL, expire_at BIGINT, INDEX idx_user_coupons_user_id (user_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    CREATE TABLE IF NOT EXISTS invitations (id BIGINT PRIMARY KEY AUTO_INCREMENT, inviter_id VARCHAR(64) NOT NULL, invitee_id VARCHAR(64) NOT NULL UNIQUE, invite_code VARCHAR(16) NOT NULL, reward_to_inviter INT NOT NULL DEFAULT 5, reward_to_invitee INT NOT NULL DEFAULT 5, status VARCHAR(32) NOT NULL DEFAULT 'pending', rewarded_at BIGINT, created_at BIGINT NOT NULL, INDEX idx_invitations_inviter_id (inviter_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+    CREATE TABLE IF NOT EXISTS verification_codes (id BIGINT PRIMARY KEY AUTO_INCREMENT, phone VARCHAR(20) NOT NULL, code VARCHAR(12) NOT NULL, expire_at BIGINT NOT NULL, used_at BIGINT, created_at BIGINT NOT NULL, INDEX idx_verification_phone (phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
     """
     try:
         with db_connect() as conn:
@@ -616,6 +642,10 @@ def init_db() -> None:
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    try:
+        send_expiry_reminders()
+    except Exception:
+        logger.exception("plan expiry reminder failed")
 
 
 class HotTitleRequest(BaseModel):
@@ -656,6 +686,7 @@ class SendCodeRequest(BaseModel):
 class LoginRequest(BaseModel):
     phone: str
     code: str
+    invite_code: str = ""
 
 
 class SyncStateRequest(BaseModel):
@@ -678,6 +709,7 @@ class SaveHistoryRequest(BaseModel):
 
 class CreateOrderRequest(BaseModel):
     plan_id: int
+    user_coupon_id: int | None = None
 
 
 class SubmitPaymentRequest(BaseModel):
@@ -699,6 +731,35 @@ class AdminNoteRequest(BaseModel):
 class AdjustQuotaRequest(BaseModel):
     delta: int
     reason: str = ""
+
+
+class RedeemCouponRequest(BaseModel):
+    code: str
+
+
+class AdminCouponRequest(BaseModel):
+    code: str = ""
+    name: str
+    type: str
+    value: float
+    min_amount: float = 0
+    applicable_plans: list[str] | None = None
+    total_quota: int = -1
+    start_at: int = 0
+    end_at: int = 0
+    status: str = "active"
+
+
+class AdminCouponPatchRequest(BaseModel):
+    name: str | None = None
+    status: str | None = None
+    total_quota: int | None = None
+    end_at: int | None = None
+
+
+class DistributeCouponRequest(BaseModel):
+    user_ids: list[str] = []
+    expire_at: int | None = None
 
 
 def b64url_encode(data: bytes) -> str:
@@ -801,6 +862,8 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
         "plan_expire_ts": expire_ts,
         "days_until_expire": days_until_expire,
         "is_admin": bool(user.get("is_admin")),
+        "invite_code": user.get("invite_code") or "",
+        "invited_by": user.get("invited_by") or "",
         "last_active_at": iso_from_ts(user.get("last_active_at")),
         "total_spent": float(user.get("total_spent") or 0),
         "admin_note": user.get("admin_note") or "",
@@ -840,6 +903,108 @@ def get_plan_code(plan_id: int) -> str:
 
 def create_order_no() -> str:
     return f"TBX{time.strftime('%Y%m%d')}{uuid.uuid4().hex[:4].upper()}"
+
+
+def generate_coupon_code() -> str:
+    return f"CP{time.strftime('%y%m')}{uuid.uuid4().hex[:6].upper()}"
+
+
+def generate_invite_code(conn: DatabaseConnection) -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    for _ in range(30):
+        code = "".join(random.choice(alphabet) for _ in range(8))
+        if not row_to_dict(conn.execute("SELECT id FROM users WHERE invite_code = ?", (code,)).fetchone()):
+            return code
+    return uuid.uuid4().hex[:8].upper()
+
+
+def parse_plan_codes(value: Any) -> list[str] | None:
+    if value in (None, "", "null"):
+        return None
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    try:
+        data = json.loads(str(value))
+        return [str(item) for item in data] if isinstance(data, list) else None
+    except Exception:
+        return None
+
+
+
+
+def send_expiry_reminders() -> None:
+    target_day = time.strftime("%Y-%m-%d", time.localtime(now_ts() + 3 * 86400))
+    start = int(time.mktime(time.strptime(target_day, "%Y-%m-%d")))
+    end = start + 86400
+    log_key = f"plan_expire_3d:{target_day}"
+    with db_connect() as conn:
+        rows = conn.execute("""
+            SELECT u.*, p.name AS plan_name FROM users u LEFT JOIN plans p ON u.current_plan_id = p.id
+            WHERE u.plan_expire_at >= ? AND u.plan_expire_at < ? AND u.current_plan_id > 1
+        """, (start, end)).fetchall()
+        for row in rows:
+            user = row_to_dict(row) or {}
+            exists = row_to_dict(conn.execute("SELECT id FROM operation_logs WHERE user_id=? AND action='sms_send' AND detail LIKE ? LIMIT 1", (user["id"], f"%{log_key}%")).fetchone())
+            if exists:
+                continue
+            sms_log(conn, user["id"], user["phone"], "plan_expire_3d", {"plan_name": user.get("plan_name") or user.get("plan_code"), "log_key": log_key})
+
+def mask_phone(phone: str) -> str:
+    digits = re.sub(r"\D", "", str(phone or ""))
+    if len(digits) < 7:
+        return digits
+    return f"{digits[:3]}****{digits[-4:]}"
+
+
+def coupon_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {**row, "id": int(row.get("id") or 0), "value": float(row.get("value") or 0), "min_amount": float(row.get("min_amount") or 0), "total_quota": int(row.get("total_quota") or -1), "used_count": int(row.get("used_count") or 0), "applicable_plans": parse_plan_codes(row.get("applicable_plans")), "start_at": iso_from_ts(row.get("start_at")), "end_at": iso_from_ts(row.get("end_at")), "created_at": iso_from_ts(row.get("created_at"))}
+
+
+def user_coupon_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {"id": int(row.get("user_coupon_id") or row.get("id") or 0), "status": row.get("user_coupon_status") or row.get("status"), "received_at": iso_from_ts(row.get("received_at")), "expire_at": iso_from_ts(row.get("expire_at")), "used_at": iso_from_ts(row.get("used_at")), "used_order_no": row.get("used_order_no") or "", "coupon": coupon_row(row)}
+
+
+def validate_coupon_for_order(conn: DatabaseConnection, user_id: str, user_coupon_id: int, plan: dict[str, Any]) -> tuple[dict[str, Any], float, float]:
+    row = row_to_dict(conn.execute("""
+        SELECT uc.id AS user_coupon_id, uc.status AS user_coupon_status, uc.expire_at, c.*
+        FROM user_coupons uc JOIN coupons c ON uc.coupon_id = c.id
+        WHERE uc.id = ? AND uc.user_id = ?
+    """, (user_coupon_id, user_id)).fetchone())
+    if not row or row.get("user_coupon_status") != "unused":
+        raise HTTPException(status_code=400, detail="coupon unavailable")
+    stamp = now_ts()
+    if int(row.get("expire_at") or 0) and int(row.get("expire_at") or 0) < stamp:
+        raise HTTPException(status_code=400, detail="coupon expired")
+    if row.get("status") != "active" or (int(row.get("start_at") or 0) and int(row.get("start_at") or 0) > stamp) or (int(row.get("end_at") or 0) and int(row.get("end_at") or 0) < stamp):
+        raise HTTPException(status_code=400, detail="coupon inactive")
+    original = round(int(plan["price_cents"]) / 100, 2)
+    plan_codes = parse_plan_codes(row.get("applicable_plans"))
+    if plan_codes and str(plan.get("code")) not in plan_codes:
+        raise HTTPException(status_code=400, detail="coupon not applicable")
+    if original < float(row.get("min_amount") or 0):
+        raise HTTPException(status_code=400, detail="coupon min amount not met")
+    if row.get("type") == "amount_off":
+        amount = max(0, original - float(row.get("value") or 0))
+    elif row.get("type") == "discount":
+        amount = max(0, original * float(row.get("value") or 1))
+    else:
+        raise HTTPException(status_code=400, detail="quota coupon cannot be used for order")
+    amount = round(amount, 2)
+    return row, amount, round(original - amount, 2)
+
+
+def grant_user_coupon(conn: DatabaseConnection, user_id: str, coupon_id: int, expire_at: int | None, operator_id: str | None = None) -> int:
+    stamp = now_ts()
+    conn.execute("INSERT INTO user_coupons (user_id, coupon_id, status, received_at, expire_at) VALUES (?, ?, 'unused', ?, ?)", (user_id, coupon_id, stamp, expire_at))
+    id_row = row_to_dict(conn.execute("SELECT last_insert_rowid() AS id" if not is_mysql() else "SELECT LAST_INSERT_ID() AS id").fetchone()) or {}
+    new_id = int(id_row.get("id") or 0)
+    log_operation(conn, user_id, "coupon_distribute", {"coupon_id": coupon_id, "user_coupon_id": new_id}, "admin" if operator_id else "system", operator_id, "coupon", str(coupon_id))
+    return new_id
+
+
+def sms_log(conn: DatabaseConnection, user_id: str | None, phone: str, template_key: str, params: dict[str, Any]) -> None:
+    result = send_sms(phone, template_key, params)
+    log_operation(conn, user_id, "sms_send", {"phone": phone, "template_key": template_key, "params": params, "result": result}, "system", "sms", "sms", phone)
 
 
 def log_operation(
@@ -899,6 +1064,9 @@ def format_order_row(order: dict[str, Any], include_screenshot: bool = False) ->
         "plan_id": int(order.get("plan_id") or 0),
         "plan_name": order.get("plan_name", ""),
         "amount": float(order.get("amount") or 0),
+        "original_amount": float(order.get("original_amount") or order.get("amount") or 0),
+        "discount_amount": float(order.get("discount_amount") or 0),
+        "user_coupon_id": order.get("user_coupon_id"),
         "status": order.get("status"),
         "pay_method": order.get("pay_method", "manual"),
         "remark": order.get("remark") or "",
@@ -1082,37 +1250,58 @@ def db_health(authorization: str | None = Header(default=None)) -> dict[str, Any
     return response
 
 
+
 @app.post("/api/v1/auth/send-code")
 def send_code(payload: SendCodeRequest) -> dict[str, Any]:
-    # 开发期固定验证码；上线前替换为真实短信服务。
     phone = re.sub(r"\D", "", payload.phone or "")
     if len(phone) < 6:
-        raise HTTPException(status_code=400, detail="请输入正确手机号")
-    return {"sent": True, "dev_code": "1234"}
+        raise HTTPException(status_code=400, detail="invalid phone")
+    code = f"{random.randint(0, 999999):06d}" if sms_enabled() else "1234"
+    with db_connect() as conn:
+        if sms_enabled():
+            stamp = now_ts()
+            conn.execute("INSERT INTO verification_codes (phone, code, expire_at, created_at) VALUES (?, ?, ?, ?)", (phone, code, stamp + 300, stamp))
+        sms_log(conn, None, phone, "verification", {"code": code})
+    response = {"sent": True}
+    if not sms_enabled():
+        response["dev_code"] = "1234"
+    return response
 
 
 @app.post("/api/v1/auth/login")
 def login(payload: LoginRequest, user_agent: str | None = Header(default=None)) -> dict[str, Any]:
     phone = re.sub(r"\D", "", payload.phone or "")
     if len(phone) < 6:
-        raise HTTPException(status_code=400, detail="请输入正确手机号")
-    if payload.code != "1234":
-        raise HTTPException(status_code=400, detail="验证码错误")
+        raise HTTPException(status_code=400, detail="invalid phone")
     created = now_ts()
     with db_connect() as conn:
+        if sms_enabled():
+            code_row = row_to_dict(conn.execute("SELECT * FROM verification_codes WHERE phone = ? AND code = ? AND used_at IS NULL ORDER BY created_at DESC LIMIT 1", (phone, payload.code)).fetchone())
+            if not code_row or int(code_row.get("expire_at") or 0) < created:
+                raise HTTPException(status_code=400, detail="invalid verification code")
+            conn.execute("UPDATE verification_codes SET used_at = ? WHERE id = ?", (created, code_row["id"]))
+        elif payload.code != "1234":
+            raise HTTPException(status_code=400, detail="invalid verification code")
         user = row_to_dict(conn.execute("SELECT * FROM users WHERE phone = ?", (phone,)).fetchone())
         if not user:
             user_id = str(uuid.uuid4())
-            nickname = f"用户{phone[-4:]}"
-            conn.execute(
-                """
-                INSERT INTO users (id, phone, nickname, plan_code, current_plan_id, plan_expire_at, quota_remaining, trial_started_at, trial_expires_at, created_at, updated_at)
-                VALUES (?, ?, ?, 'free', 1, ?, 5, ?, ?, ?, ?)
-                """,
-                (user_id, phone, nickname, created + 3 * 24 * 3600, created, created + 3 * 24 * 3600, created, created),
-            )
-            log_operation(conn, user_id, "user_register", {"phone": phone}, "user", user_id, "user", user_id)
+            nickname = f"??{phone[-4:]}"
+            invite_code = generate_invite_code(conn)
+            raw_invite = (payload.invite_code or "").strip().upper()
+            inviter = row_to_dict(conn.execute("SELECT * FROM users WHERE invite_code = ?", (raw_invite,)).fetchone()) if raw_invite else None
+            invited_by = inviter["id"] if inviter else None
+            conn.execute("""
+                INSERT INTO users (id, phone, nickname, plan_code, current_plan_id, plan_expire_at, quota_remaining, trial_started_at, trial_expires_at, created_at, updated_at, invite_code, invited_by)
+                VALUES (?, ?, ?, 'free', 1, ?, 5, ?, ?, ?, ?, ?, ?)
+            """, (user_id, phone, nickname, created + 3 * 24 * 3600, created, created + 3 * 24 * 3600, created, created, invite_code, invited_by))
+            log_operation(conn, user_id, "user_register", {"phone": phone, "invite_code": invite_code, "invited_by": invited_by}, "user", user_id, "user", user_id)
+            if inviter and inviter["id"] != user_id:
+                conn.execute("INSERT INTO invitations (inviter_id, invitee_id, invite_code, reward_to_inviter, reward_to_invitee, status, created_at) VALUES (?, ?, ?, 5, 5, 'pending', ?)", (inviter["id"], user_id, raw_invite, created))
+                log_operation(conn, user_id, "invitation_bind", {"inviter_id": inviter["id"], "invite_code": raw_invite}, "user", user_id, "invitation", user_id)
             user = row_to_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
+        elif not user.get("invite_code"):
+            conn.execute("UPDATE users SET invite_code = ? WHERE id = ?", (generate_invite_code(conn), user["id"]))
+            user = row_to_dict(conn.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone())
         log_operation(conn, user["id"], "user_login", {"phone": phone, "user_agent": user_agent or ""}, "user", user["id"], "user", user["id"])
     return {"token": create_token(user["id"], user["phone"], user["nickname"]), "user": public_user(user), "plans": load_plans()}
 
@@ -1128,28 +1317,87 @@ def plans() -> dict[str, Any]:
     return {"plans": load_plans()}
 
 
+
+@app.get("/api/v1/coupons/my")
+def my_coupons(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = current_user(authorization)
+    stamp = now_ts()
+    with db_connect() as conn:
+        conn.execute("UPDATE user_coupons SET status='expired' WHERE user_id=? AND status='unused' AND expire_at IS NOT NULL AND expire_at > 0 AND expire_at < ?", (user["id"], stamp))
+        rows = conn.execute("""
+            SELECT uc.id AS user_coupon_id, uc.status AS user_coupon_status, uc.received_at, uc.expire_at, uc.used_at, uc.used_order_no, c.*
+            FROM user_coupons uc JOIN coupons c ON uc.coupon_id = c.id
+            WHERE uc.user_id = ? ORDER BY uc.received_at DESC
+        """, (user["id"],)).fetchall()
+    grouped = {"unused": [], "used": [], "expired": []}
+    for row in rows:
+        item = user_coupon_row(row_to_dict(row) or {})
+        grouped.setdefault(item["status"] or "unused", []).append(item)
+    return {"coupons": grouped}
+
+
+@app.post("/api/v1/coupons/redeem")
+def redeem_coupon(payload: RedeemCouponRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = current_user(authorization)
+    code = (payload.code or "").strip().upper()
+    stamp = now_ts()
+    with db_connect() as conn:
+        coupon = row_to_dict(conn.execute("SELECT * FROM coupons WHERE code = ?", (code,)).fetchone())
+        if not coupon or coupon.get("status") != "active":
+            raise HTTPException(status_code=404, detail="coupon not found")
+        if int(coupon.get("start_at") or 0) and int(coupon.get("start_at") or 0) > stamp:
+            raise HTTPException(status_code=400, detail="coupon not started")
+        if int(coupon.get("end_at") or 0) and int(coupon.get("end_at") or 0) < stamp:
+            raise HTTPException(status_code=400, detail="coupon expired")
+        if int(coupon.get("total_quota") or -1) >= 0 and int(coupon.get("used_count") or 0) >= int(coupon.get("total_quota") or 0):
+            raise HTTPException(status_code=400, detail="coupon quota used up")
+        if row_to_dict(conn.execute("SELECT id FROM user_coupons WHERE user_id=? AND coupon_id=?", (user["id"], coupon["id"])).fetchone()):
+            raise HTTPException(status_code=400, detail="coupon already received")
+        grant_user_coupon(conn, user["id"], int(coupon["id"]), int(coupon.get("end_at") or 0) or None)
+        log_operation(conn, user["id"], "coupon_redeem", {"code": code, "coupon_id": coupon["id"]}, "user", user["id"], "coupon", str(coupon["id"]))
+    return {"ok": True}
+
+
+@app.get("/api/v1/invitations/my")
+def my_invitations(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    user = current_user(authorization)
+    with db_connect() as conn:
+        if not user.get("invite_code"):
+            conn.execute("UPDATE users SET invite_code=? WHERE id=?", (generate_invite_code(conn), user["id"]))
+            user = row_to_dict(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone()) or user
+        rows = conn.execute("""
+            SELECT i.*, u.phone, u.nickname FROM invitations i
+            LEFT JOIN users u ON i.invitee_id = u.id
+            WHERE i.inviter_id = ? ORDER BY i.created_at DESC
+        """, (user["id"],)).fetchall()
+    data = [row_to_dict(row) or {} for row in rows]
+    total_reward = sum(int(row.get("reward_to_inviter") or 0) for row in data if row.get("status") == "rewarded")
+    invite_code = user.get("invite_code") or ""
+    return {"my_invite_code": invite_code, "share_url": f"/?invite={invite_code}", "total_reward": total_reward, "invited_users": [{"phone": mask_phone(row.get("phone") or ""), "nickname": row.get("nickname") or "", "status": row.get("status"), "rewarded_at": iso_from_ts(row.get("rewarded_at")), "created_at": iso_from_ts(row.get("created_at"))} for row in data]}
+
+
+
 @app.post("/api/v1/orders/create")
 def create_order(payload: CreateOrderRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     user = current_user(authorization)
     with db_connect() as conn:
         plan = get_plan_by_id(conn, int(payload.plan_id))
         if not plan or int(plan.get("price_cents") or 0) <= 0:
-            raise HTTPException(status_code=400, detail="请选择可购买套餐")
-        existing = row_to_dict(conn.execute(
-            "SELECT * FROM orders WHERE user_id = ? AND plan_id = ? AND status IN ('pending', 'paid_pending') ORDER BY created_at DESC LIMIT 1",
-            (user["id"], int(payload.plan_id)),
-        ).fetchone())
+            raise HTTPException(status_code=400, detail="invalid plan")
+        coupon_id = int(payload.user_coupon_id or 0)
+        original_amount = round(int(plan["price_cents"]) / 100, 2)
+        amount = original_amount
+        discount_amount = 0.0
+        if coupon_id:
+            _, amount, discount_amount = validate_coupon_for_order(conn, user["id"], coupon_id, plan)
+        existing = row_to_dict(conn.execute("SELECT * FROM orders WHERE user_id = ? AND plan_id = ? AND COALESCE(user_coupon_id,0) = ? AND status IN ('pending', 'paid_pending') ORDER BY created_at DESC LIMIT 1", (user["id"], int(payload.plan_id), coupon_id)).fetchone())
         if existing:
             order = existing
         else:
             order_no = create_order_no()
-            amount = round(int(plan["price_cents"]) / 100, 2)
-            conn.execute(
-                "INSERT INTO orders (order_no, user_id, plan_id, amount, status, pay_method, created_at) VALUES (?, ?, ?, ?, 'pending', 'manual', ?)",
-                (order_no, user["id"], int(payload.plan_id), amount, now_ts()),
-            )
+            conn.execute("INSERT INTO orders (order_no, user_id, plan_id, amount, status, pay_method, created_at, user_coupon_id, original_amount, discount_amount) VALUES (?, ?, ?, ?, 'pending', 'manual', ?, ?, ?, ?)", (order_no, user["id"], int(payload.plan_id), amount, now_ts(), coupon_id or None, original_amount, discount_amount))
             order = row_to_dict(conn.execute("SELECT * FROM orders WHERE order_no = ?", (order_no,)).fetchone()) or {}
-            log_operation(conn, user["id"], "order_create", {"order_no": order_no, "plan_id": int(payload.plan_id), "amount": amount}, "user", user["id"], "order", order_no)
+            log_operation(conn, user["id"], "order_create", {"order_no": order_no, "plan_id": int(payload.plan_id), "amount": amount, "original_amount": original_amount, "discount_amount": discount_amount, "user_coupon_id": coupon_id or None}, "user", user["id"], "order", order_no)
     return format_order_response(order, plan)
 
 
@@ -1246,7 +1494,14 @@ def admin_confirm_order(order_no: str, authorization: str | None = Header(defaul
                 "UPDATE users SET current_plan_id = ?, plan_code = ?, plan_expire_at = ?, quota_remaining = ?, total_spent = total_spent + ?, updated_at = ? WHERE id = ?",
                 (int(plan["id"]), plan["code"], end, int(plan["quota"]), float(order["amount"]), start, order["user_id"]),
             )
+            if order.get("user_coupon_id"):
+                conn.execute("UPDATE user_coupons SET status='used', used_at=?, used_order_no=? WHERE id=? AND user_id=?", (start, order_no, int(order["user_coupon_id"]), order["user_id"]))
+                conn.execute("UPDATE coupons SET used_count = used_count + 1 WHERE id = (SELECT coupon_id FROM user_coupons WHERE id = ?)", (int(order["user_coupon_id"]),))
+                log_operation(conn, order["user_id"], "coupon_use", {"order_no": order_no, "user_coupon_id": int(order["user_coupon_id"])}, "admin", admin["id"], "coupon", str(order["user_coupon_id"]))
             log_operation(conn, order["user_id"], "order_confirm", {"order_no": order_no, "admin": admin["phone"], "amount": float(order["amount"])}, "admin", admin["id"], "order", order_no)
+            user_row = row_to_dict(conn.execute("SELECT phone FROM users WHERE id=?", (order["user_id"],)).fetchone()) or {}
+            if user_row.get("phone"):
+                sms_log(conn, order["user_id"], user_row["phone"], "order_opened", {"plan_name": plan["name"], "quota": int(plan["quota"]), "expire_at": iso_from_ts(end)})
             conn.commit()
         except Exception:
             conn.rollback()
@@ -1265,6 +1520,94 @@ def admin_reject_order(order_no: str, payload: RejectOrderRequest, authorization
         conn.execute("UPDATE orders SET status = 'cancelled', remark = ? WHERE order_no = ?", (reason, order_no))
         log_operation(conn, order.get("user_id"), "order_reject", {"order_no": order_no, "admin": admin["phone"], "reason": reason}, "admin", admin["id"], "order", order_no)
     return {"ok": True, "status": "cancelled"}
+
+
+
+@app.get("/api/v1/admin/coupons")
+def admin_coupons(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_admin(authorization)
+    with db_connect() as conn:
+        rows = conn.execute("SELECT * FROM coupons ORDER BY created_at DESC").fetchall()
+    return {"coupons": [coupon_row(row_to_dict(row) or {}) for row in rows]}
+
+
+@app.post("/api/v1/admin/coupons")
+def admin_create_coupon(payload: AdminCouponRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin = require_admin(authorization)
+    if payload.type not in {"amount_off", "discount", "quota_bonus"}:
+        raise HTTPException(status_code=400, detail="invalid coupon type")
+    code = (payload.code or generate_coupon_code()).strip().upper()
+    stamp = now_ts()
+    with db_connect() as conn:
+        conn.execute("""
+            INSERT INTO coupons (code, name, type, value, min_amount, applicable_plans, total_quota, used_count, start_at, end_at, status, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
+        """, (code, payload.name, payload.type, float(payload.value), float(payload.min_amount or 0), json.dumps(payload.applicable_plans, ensure_ascii=False) if payload.applicable_plans else None, int(payload.total_quota), int(payload.start_at or 0), int(payload.end_at or 0), payload.status or "active", admin["id"], stamp))
+        coupon = row_to_dict(conn.execute("SELECT * FROM coupons WHERE code=?", (code,)).fetchone()) or {}
+        log_operation(conn, None, "coupon_create", {"coupon_id": coupon.get("id"), "code": code}, "admin", admin["id"], "coupon", str(coupon.get("id")))
+    return {"coupon": coupon_row(coupon)}
+
+
+@app.patch("/api/v1/admin/coupons/{coupon_id}")
+def admin_patch_coupon(coupon_id: int, payload: AdminCouponPatchRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin = require_admin(authorization)
+    fields, params = [], []
+    for key in ["name", "status", "total_quota", "end_at"]:
+        value = getattr(payload, key)
+        if value is not None:
+            fields.append(f"{key}=?")
+            params.append(value)
+    if not fields:
+        return {"ok": True}
+    params.append(coupon_id)
+    with db_connect() as conn:
+        conn.execute(f"UPDATE coupons SET {', '.join(fields)} WHERE id=?", params)
+        log_operation(conn, None, "coupon_update", {"coupon_id": coupon_id, "fields": fields}, "admin", admin["id"], "coupon", str(coupon_id))
+        coupon = row_to_dict(conn.execute("SELECT * FROM coupons WHERE id=?", (coupon_id,)).fetchone()) or {}
+    return {"coupon": coupon_row(coupon)}
+
+
+@app.post("/api/v1/admin/coupons/{coupon_id}/distribute")
+def admin_distribute_coupon(coupon_id: int, payload: DistributeCouponRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin = require_admin(authorization)
+    with db_connect() as conn:
+        coupon = row_to_dict(conn.execute("SELECT * FROM coupons WHERE id=?", (coupon_id,)).fetchone())
+        if not coupon:
+            raise HTTPException(status_code=404, detail="coupon not found")
+        count = 0
+        for user_id in payload.user_ids:
+            user = row_to_dict(conn.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone())
+            if user:
+                grant_user_coupon(conn, user["id"], coupon_id, payload.expire_at or int(coupon.get("end_at") or 0) or None, admin["id"])
+                count += 1
+        log_operation(conn, None, "coupon_batch_distribute", {"coupon_id": coupon_id, "count": count}, "admin", admin["id"], "coupon", str(coupon_id))
+    return {"ok": True, "count": count}
+
+
+@app.get("/api/v1/admin/coupons/{coupon_id}/usage")
+def admin_coupon_usage(coupon_id: int, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_admin(authorization)
+    with db_connect() as conn:
+        rows = conn.execute("SELECT uc.*, u.phone, u.nickname FROM user_coupons uc LEFT JOIN users u ON uc.user_id = u.id WHERE uc.coupon_id = ? ORDER BY uc.received_at DESC", (coupon_id,)).fetchall()
+    data = [row_to_dict(row) or {} for row in rows]
+    return {"records": [{**row, "phone": mask_phone(row.get("phone") or ""), "received_at": iso_from_ts(row.get("received_at")), "used_at": iso_from_ts(row.get("used_at"))} for row in data]}
+
+
+@app.get("/api/v1/admin/invitations")
+def admin_invitations(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_admin(authorization)
+    today = int(time.mktime(time.strptime(time.strftime("%Y-%m-%d"), "%Y-%m-%d")))
+    with db_connect() as conn:
+        rows = conn.execute("""
+            SELECT i.*, inviter.phone AS inviter_phone, invitee.phone AS invitee_phone
+            FROM invitations i LEFT JOIN users inviter ON i.inviter_id = inviter.id LEFT JOIN users invitee ON i.invitee_id = invitee.id
+            ORDER BY i.created_at DESC LIMIT 200
+        """).fetchall()
+        today_count = scalar_value(conn.execute("SELECT COUNT(*) AS count FROM invitations WHERE created_at >= ?", (today,)).fetchone())
+        total_count = scalar_value(conn.execute("SELECT COUNT(*) AS count FROM invitations").fetchone())
+        reward_total = scalar_value(conn.execute("SELECT COALESCE(SUM(reward_to_inviter + reward_to_invitee),0) AS total FROM invitations WHERE status='rewarded'").fetchone())
+    data = [row_to_dict(row) or {} for row in rows]
+    return {"summary": {"today": int(today_count or 0), "total": int(total_count or 0), "reward_total": int(reward_total or 0)}, "invitations": [{**row, "inviter_phone": mask_phone(row.get("inviter_phone") or ""), "invitee_phone": mask_phone(row.get("invitee_phone") or ""), "created_at": iso_from_ts(row.get("created_at")), "rewarded_at": iso_from_ts(row.get("rewarded_at"))} for row in data]}
 
 
 @app.get("/api/v1/admin/dashboard")
@@ -1534,6 +1877,8 @@ def admin_refund_approve(order_no: str, authorization: str | None = Header(defau
             conn.execute("UPDATE users SET current_plan_id=1, plan_code='free', quota_remaining=0, updated_at=? WHERE id=?", (now_ts(), order["user_id"]))
         conn.execute("UPDATE users SET total_spent = CASE WHEN total_spent >= ? THEN total_spent - ? ELSE 0 END, updated_at=? WHERE id=?", (float(order["amount"]), float(order["amount"]), now_ts(), order["user_id"]))
         log_operation(conn, order["user_id"], "refund_approve", {"order_no": order_no, "amount": float(order["amount"])}, "admin", admin["id"], "order", order_no)
+        if user.get("phone"):
+            sms_log(conn, order["user_id"], user["phone"], "refund_approved", {"order_no": order_no})
     return {"ok": True, "status": "refunded", "notice": "请管理员手动转账给用户"}
 
 
@@ -1862,6 +2207,16 @@ async def draft(payload: DraftRequest, authorization: str | None = Header(defaul
     quota_before = int(user.get("quota_remaining") or 0)
     quota_after = quota_before - 1
     with db_connect() as conn:
+        usage_count = int(scalar_value(conn.execute("SELECT COUNT(*) AS count FROM usage_logs WHERE user_id = ?", (user["id"],)).fetchone()) or 0)
+        invitation = row_to_dict(conn.execute("SELECT * FROM invitations WHERE invitee_id = ? AND status = 'pending'", (user["id"],)).fetchone())
+        if usage_count == 0 and invitation:
+            inviter_reward = int(invitation.get("reward_to_inviter") or 5)
+            invitee_reward = int(invitation.get("reward_to_invitee") or 5)
+            conn.execute("UPDATE users SET quota_remaining = quota_remaining + ?, updated_at = ? WHERE id = ?", (inviter_reward, now_ts(), invitation["inviter_id"]))
+            quota_after += invitee_reward
+            conn.execute("UPDATE invitations SET status='rewarded', rewarded_at=? WHERE id=?", (now_ts(), invitation["id"]))
+            log_operation(conn, invitation["inviter_id"], "invitation_reward", {"invitee_id": user["id"], "delta": inviter_reward}, "system", "invitation", "invitation", str(invitation["id"]))
+            log_operation(conn, user["id"], "invitation_reward", {"inviter_id": invitation["inviter_id"], "delta": invitee_reward}, "system", "invitation", "invitation", str(invitation["id"]))
         conn.execute(
             "UPDATE users SET quota_remaining = ?, updated_at = ? WHERE id = ?",
             (quota_after, now_ts(), user["id"]),

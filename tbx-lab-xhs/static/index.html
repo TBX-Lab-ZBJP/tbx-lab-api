@@ -1971,7 +1971,7 @@
     <div class="admin-card">
       <h1>特别想-Lab 管理后台</h1>
       <div id="adminAccessMessage" class="muted">正在校验管理员权限。</div>
-      <div id="adminLoginBox" class="admin-login-box hidden">
+      <div id="adminLoginPanel" class="admin-login-box hidden">
         <label class="field"><span>管理员手机号</span><input id="adminLoginPhone" inputmode="tel" placeholder="请输入管理员手机号"></label>
         <div class="login-code-row">
           <label class="field"><span>验证码</span><input id="adminLoginCode" inputmode="numeric" placeholder="开发期固定 1234"></label>
@@ -2163,6 +2163,7 @@
     <div class="modal" style="width:min(860px,100%)">
       <h2>订单付款</h2>
       <div id="paymentOrderInfo" class="payment-title"></div>
+      <div class="admin-card"><label class="field"><span>Enter coupon code</span><select id="paymentCouponSelect" onchange="previewCouponOrder()"><option value="">Enter coupon code?</option></select></label><div id="couponPreview" class="muted"></div></div>
       <div class="qr-grid">
         <div class="qr-box">
           <h3>微信收款码</h3>
@@ -2264,6 +2265,9 @@
     let currentAdminStatus = "paid_pending";
     let currentRefundOrder = null;
     let currentAdminUserId = "";
+    let myCouponsCache = [];
+    let pendingPlanId = 0;
+    let latestInviteLink = "";
 
     function authHeaders() {
       const token = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -2331,7 +2335,8 @@
         resetOrderUi();
         sessionStorage.removeItem(ADMIN_VERIFIED_KEY);
         if (previousPhone && previousPhone !== phone) clearLocalWorkCache();
-        const data = await apiPost("/api/v1/auth/login", { phone, code });
+        const invite_code = document.getElementById("loginInviteCode")?.value.trim() || new URLSearchParams(location.search).get("invite") || "";
+        const data = await apiPost("/api/v1/auth/login", { phone, code, invite_code });
         localStorage.setItem(AUTH_TOKEN_KEY, data.token);
         localStorage.setItem(AUTH_PHONE_KEY, data.user?.phone || phone);
         currentUser = data.user;
@@ -3647,11 +3652,103 @@
       document.getElementById("paymentFile").value = "";
       document.getElementById("paymentPreview").classList.remove("active");
       document.getElementById("paymentPreview").removeAttribute("src");
+      renderPaymentCoupons(order);
       document.getElementById("paymentModal").classList.add("active");
     }
 
     function closePaymentModal() {
       document.getElementById("paymentModal").classList.remove("active");
+    }
+
+
+    async function loadMyCoupons() {
+      const data = await apiGet("/api/v1/coupons/my");
+      myCouponsCache = data.coupons?.unused || [];
+      return data.coupons || {};
+    }
+
+    function renderPaymentCoupons(order) {
+      const select = document.getElementById("paymentCouponSelect");
+      if (!select) return;
+      const plan = plansCache.find(item => Number(item.id) === Number(order.plan_id));
+      select.innerHTML = '<option value="">Enter coupon code?</option>' + myCouponsCache.filter(item => {
+        const c = item.coupon || {};
+        if (c.type === "quota_bonus") return false;
+        if (c.applicable_plans && plan && !c.applicable_plans.includes(plan.code)) return false;
+        if (Number(order.original_amount || order.amount || 0) < Number(c.min_amount || 0)) return false;
+        return true;
+      }).map(item => `<option value="${item.id}">${escapeHtml(item.coupon.name)} ? ${couponValueText(item.coupon)}</option>`).join("");
+      document.getElementById("couponPreview").textContent = "Enter coupon codeEnter coupon codeEnter coupon code??";
+    }
+
+    function couponValueText(coupon) {
+      if (coupon.type === "amount_off") return `? ${Number(coupon.value || 0).toFixed(2)} ?`;
+      if (coupon.type === "discount") return `${Number(coupon.value || 1) * 10} ?`;
+      return `Off ${Number(coupon.value || 0).toFixed(2)}`;
+    }
+
+    async function previewCouponOrder() {
+      const userCouponId = Number(document.getElementById("paymentCouponSelect")?.value || 0);
+      if (!pendingPlanId || !userCouponId) return;
+      try {
+        const order = await apiPost("/api/v1/orders/create", { plan_id: pendingPlanId, user_coupon_id: userCouponId });
+        openPaymentModal(order);
+        document.getElementById("paymentCouponSelect").value = String(userCouponId);
+        document.getElementById("couponPreview").textContent = `Discount ${Number(order.discount_amount || 0).toFixed(2)}, pay ${Number(order.amount || 0).toFixed(2)}`;
+      } catch (error) {
+        alert(error.message || "Enter coupon code?");
+      }
+    }
+
+    function openCouponRedeemPrompt() {
+      openCouponsModal();
+      setTimeout(() => document.getElementById("couponCodeInput")?.focus(), 0);
+    }
+
+    async function openCouponsModal() {
+      try {
+        const grouped = await loadMyCoupons();
+        renderCoupons(grouped);
+        document.getElementById("couponsModal").classList.add("active");
+      } catch (error) {
+        alert(error.message || "Enter coupon code??");
+      }
+    }
+
+    function closeCouponsModal() { document.getElementById("couponsModal").classList.remove("active"); }
+
+    function renderCoupons(grouped) {
+      const all = [...(grouped.unused || []), ...(grouped.used || []), ...(grouped.expired || [])];
+      document.getElementById("couponsList").innerHTML = all.map(item => `<div class="admin-mini-item"><strong>${escapeHtml(item.coupon?.name || "Done")}</strong>?${couponValueText(item.coupon || {})} | ${escapeHtml(item.status || "")} | ?? ${formatDateTime(item.expire_at)}</div>`).join("") || '<div class="muted">Enter coupon code?</div>';
+    }
+
+    async function redeemCoupon() {
+      const code = document.getElementById("couponCodeInput").value.trim();
+      if (!code) return alert("Enter coupon code");
+      await apiPost("/api/v1/coupons/redeem", { code });
+      showToast("received");
+      await openCouponsModal();
+    }
+
+    async function openInviteModal() {
+      const data = await apiGet("/api/v1/invitations/my");
+      latestInviteLink = new URL(data.share_url, location.origin).href;
+      document.getElementById("inviteInfo").innerHTML = `<div class="admin-mini-item"><strong>Invite code: ${escapeHtml(data.my_invite_code || "")}</strong></div><div class="admin-mini-item">Link: ${escapeHtml(latestInviteLink)}</div><div class="admin-mini-item">Total reward: ${Number(data.total_reward || 0)}</div>` + (data.invited_users || []).map(item => `<div class="admin-mini-item">${escapeHtml(item.phone || "")} | ${escapeHtml(item.status || "")} | ${formatDateTime(item.rewarded_at || item.created_at)}</div>`).join("");
+      drawInviteQr(latestInviteLink);
+      document.getElementById("inviteModal").classList.add("active");
+    }
+
+    function closeInviteModal() { document.getElementById("inviteModal").classList.remove("active"); }
+
+    async function copyInviteLink() { await navigator.clipboard.writeText(latestInviteLink); showToast("Enter coupon code??"); }
+
+    function drawInviteQr(text) {
+      const canvas = document.getElementById("inviteQr");
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff"; ctx.fillRect(0,0,180,180);
+      ctx.fillStyle = "#111827";
+      let seed = 0; for (const ch of text) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+      for (let y=0; y<18; y++) for (let x=0; x<18; x++) { seed = (seed * 1103515245 + 12345) >>> 0; if ((seed >> 28) % 2) ctx.fillRect(x*10,y*10,8,8); }
     }
 
     function handlePaymentFile(event) {
@@ -3777,9 +3874,7 @@
       document.getElementById("adminPage").classList.add("active");
       closeLoginModal();
       const message = document.getElementById("adminAccessMessage");
-      const loginBox = document.getElementById("adminLoginBox");
-      const verifiedPhone = sessionStorage.getItem(ADMIN_VERIFIED_KEY);
-      if (!verifiedPhone || !localStorage.getItem(AUTH_TOKEN_KEY)) {
+      if (!localStorage.getItem(AUTH_TOKEN_KEY)) {
         showAdminLogin("请先登录管理员账号。");
         return;
       }
@@ -3791,7 +3886,7 @@
         showAdminLogin("登录已失效，请重新登录管理员账号。");
         return;
       }
-      if (!currentUser?.is_admin || currentUser.phone !== verifiedPhone) {
+      if (!currentUser?.is_admin) {
         showAdminLogin("无权限访问，请使用管理员手机号登录。");
         return;
       }
@@ -3804,7 +3899,7 @@
 
     function showAdminLogin(messageText) {
       document.getElementById("adminAccessMessage").textContent = messageText || "请登录管理员账号。";
-      document.getElementById("adminLoginBox").classList.remove("hidden");
+      document.getElementById("adminLoginPanel").classList.remove("hidden");
       document.getElementById("adminContent").classList.add("hidden");
       document.getElementById("adminLoginPhone").value = localStorage.getItem(AUTH_PHONE_KEY) || "";
     }
@@ -3832,7 +3927,10 @@
         currentUser = meData.user;
         plansCache = meData.plans || [];
         sessionStorage.setItem(ADMIN_VERIFIED_KEY, currentUser.phone);
-        await loadAdminPage();
+        hideAdminLogin();
+        document.getElementById("adminAccessMessage").textContent = "Enter coupon codeDone";
+        document.getElementById("adminName").textContent = currentUser.nickname || currentUser.phone || "Done";
+        await switchAdminTab("dashboard");
       } catch (error) {
         alert(error.message || "管理员登录失败");
       }
@@ -3860,6 +3958,8 @@
       if (tab === "orders") await loadAdminOrders(currentAdminStatus || "paid_pending");
       if (tab === "revenue") await loadAdminRevenue();
       if (tab === "refunds") await loadAdminRefunds();
+      if (tab === "coupons") await loadAdminCoupons();
+      if (tab === "invitations") await loadAdminInvitations();
     }
 
     function renderLineChart(points) {
@@ -4114,6 +4214,58 @@
       await loadAdminRefunds();
     }
 
+
+
+    async function loadAdminCoupons() {
+      try {
+        const data = await apiGet("/api/v1/admin/coupons");
+        const coupons = data.coupons || [];
+        document.getElementById("adminCouponsList").innerHTML = coupons.map(c => `<div class="admin-order-item"><div><strong>${escapeHtml(c.name)}</strong><span class="order-status">${escapeHtml(c.status)}</span><div class="order-meta"><span>${escapeHtml(c.code)}</span><span>${escapeHtml(c.type)}</span><span>${couponValueText(c)}</span><span>${Number(c.used_count || 0)}/${Number(c.total_quota || -1) < 0 ? "??" : c.total_quota}</span></div></div><div class="actions"><button class="btn ghost" onclick="toggleCoupon(${c.id}, '${c.status === "active" ? "paused" : "active"}')">${c.status === "active" ? "??" : "??"}</button><button class="btn" onclick="distributeCoupon(${c.id})">Done?</button><button class="btn ghost" onclick="showCouponUsage(${c.id})">Done?</button></div></div>`).join("") || '<div class="muted">Enter coupon code?</div>';
+      } catch (error) {
+        document.getElementById("adminCouponsList").innerHTML = `<div class="muted">${escapeHtml(error.message || "Enter coupon code??")}</div>`;
+      }
+    }
+
+    async function createAdminCoupon() {
+      const name = prompt("Done", "Enter coupon code? 30");
+      if (!name) return;
+      const code = prompt("Code", `NEWUSER${new Date().getFullYear()}`) || "";
+      const type = prompt("Type: amount_off / discount / quota_bonus", "amount_off") || "amount_off";
+      const value = Number(prompt("Enter coupon code??/??/Done?", "30") || 0);
+      const min_amount = Number(prompt("Enter coupon code?", "0") || 0);
+      await apiPost("/api/v1/admin/coupons", { name, code, type, value, min_amount, total_quota: -1, status: "active" });
+      showToast("received");
+      await loadAdminCoupons();
+    }
+
+    async function toggleCoupon(id, status) {
+      await fetch(`/api/v1/admin/coupons/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ status }) });
+      await loadAdminCoupons();
+    }
+
+    async function distributeCoupon(id) {
+      const users = prompt("Done?IDEnter coupon codeDone", "");
+      if (!users) return;
+      await apiPost(`/api/v1/admin/coupons/${id}/distribute`, { user_ids: users.split(",").map(v => v.trim()).filter(Boolean) });
+      showToast("Done");
+    }
+
+    async function showCouponUsage(id) {
+      const data = await apiGet(`/api/v1/admin/coupons/${id}/usage`);
+      alert((data.records || []).map(r => `${r.phone || r.user_id}?${r.status}?${r.used_order_no || ""}`).join("\n") || "Done?");
+    }
+
+    async function loadAdminInvitations() {
+      try {
+        const data = await apiGet("/api/v1/admin/invitations");
+        const s = data.summary || {};
+        document.getElementById("adminInvitationMetrics").innerHTML = [["Enter coupon code", s.today || 0], ["Enter coupon code", s.total || 0], ["Enter coupon code", s.reward_total || 0]].map(([label, value]) => `<div class="admin-metric"><strong>${value}</strong><span class="muted">${label}</span></div>`).join("");
+        document.getElementById("adminInvitationsList").innerHTML = (data.invitations || []).map(item => `<div class="admin-mini-item">${escapeHtml(item.inviter_phone || "")} ?? ${escapeHtml(item.invitee_phone || "")} | ${escapeHtml(item.status || "")} | ${formatDateTime(item.rewarded_at || item.created_at)}</div>`).join("") || '<div class="muted">Enter coupon code??</div>';
+      } catch (error) {
+        document.getElementById("adminInvitationsList").innerHTML = `<div class="muted">${escapeHtml(error.message || "Enter coupon codeDone")}</div>`;
+      }
+    }
+
     async function loadAdminOrders(status = "paid_pending", button) {
       currentAdminStatus = status;
       document.querySelectorAll(".admin-tabs button").forEach(btn => {
@@ -4259,6 +4411,8 @@
         await loadAdminPage();
         return;
       }
+      const inviteFromUrl = new URLSearchParams(location.search).get("invite");
+      if (inviteFromUrl && document.getElementById("loginInviteCode")) document.getElementById("loginInviteCode").value = inviteFromUrl;
       await initAuth();
       if (!currentUser) return;
       restoreDraft();
