@@ -1760,6 +1760,8 @@
       <button class="mobile-drawer-item" onclick="closeMobileDrawer(); openMerchantModal()">🏪 商家档案</button>
       <button class="mobile-drawer-item" onclick="closeMobileDrawer(); openPlansModal()">💳 套餐管理</button>
       <button class="mobile-drawer-item" onclick="closeMobileDrawer(); openOrdersModal()">我的订单</button>
+      <button class="mobile-drawer-item" onclick="closeMobileDrawer(); openMyCouponsModal()">🎟️ 我的优惠券</button>
+      <button class="mobile-drawer-item" onclick="closeMobileDrawer(); openInvitationModal()">🎁 邀请有礼</button>
       <button class="mobile-drawer-item" onclick="closeMobileDrawer(); openHistoryModal()">📋 历史记录</button>
       <button class="mobile-drawer-item" onclick="closeMobileDrawer(); logout()">退出登录</button>
     </div>
@@ -1777,6 +1779,8 @@
       </div>
       <button class="history-button" onclick="openPlansModal()">💳 套餐管理</button>
       <button class="history-button" onclick="openOrdersModal()">我的订单</button>
+      <button class="history-button" onclick="openMyCouponsModal()">🎟️ 我的优惠券</button>
+      <button class="history-button" onclick="openInvitationModal()">🎁 邀请有礼</button>
       <button class="history-button" onclick="openHistoryModal()">📋 历史记录</button>
       <div class="side-note">内部工具：生成内容仅作为素材产出前素材，不自动发布。</div>
     </aside>
@@ -1795,6 +1799,8 @@
           </div>
           <button class="btn ghost" onclick="openPlansModal()">套餐管理</button>
           <button class="btn ghost" onclick="openOrdersModal()">我的订单</button>
+          <button class="btn ghost" onclick="openMyCouponsModal()">🎟️ 我的优惠券</button>
+          <button class="btn ghost" onclick="openInvitationModal()">🎁 邀请有礼</button>
           <button class="btn ghost" onclick="openMerchantModal()">🏪 商家档案</button>
           <button class="btn ghost" onclick="logout()">退出</button>
         </div>
@@ -1988,6 +1994,8 @@
           <button data-admin-tab="orders" onclick="switchAdminTab('orders', this)">📦 订单管理</button>
           <button data-admin-tab="revenue" onclick="switchAdminTab('revenue', this)">💰 营收分析</button>
           <button data-admin-tab="refunds" onclick="switchAdminTab('refunds', this)">🔄 退款管理</button>
+          <button data-admin-tab="coupons" onclick="switchAdminTab('coupons', this)">📨 推广券</button>
+          <button data-admin-tab="invitations" onclick="switchAdminTab('invitations', this)">🎁 邀请活动</button>
         </aside>
         <div class="admin-main">
           <div class="admin-card admin-top">
@@ -2063,6 +2071,18 @@
               <h2>退款管理</h2>
               <div id="adminRefundsList" class="admin-order-list"></div>
             </div>
+          </section>
+
+          <section class="admin-panel hidden" id="adminPanel-coupons">
+            <div class="admin-card">
+              <div class="actions"><button class="btn" onclick="createAdminCoupon()">创建券</button><button class="btn ghost" onclick="loadAdminCoupons()">刷新</button></div>
+              <div id="adminCouponsList" class="admin-order-list"></div>
+            </div>
+          </section>
+
+          <section class="admin-panel hidden" id="adminPanel-invitations">
+            <div class="admin-metrics" id="adminInvitationMetrics"></div>
+            <div class="admin-card"><div id="adminInvitationsList" class="admin-order-list"></div></div>
           </section>
         </div>
       </div>
@@ -2163,7 +2183,7 @@
     <div class="modal" style="width:min(860px,100%)">
       <h2>订单付款</h2>
       <div id="paymentOrderInfo" class="payment-title"></div>
-      <div class="admin-card"><label class="field"><span>?????</span><select id="paymentCouponSelect" onchange="previewCouponOrder()"><option value="">??????</option></select></label><div id="couponPreview" class="muted"></div></div>
+      <div class="admin-card"><label class="field"><span>优惠券</span><select id="paymentCouponSelect" onchange="previewCouponOrder()"><option value="">不使用优惠券</option></select></label><div id="couponPreview" class="muted"></div></div>
       <div class="qr-grid">
         <div class="qr-box">
           <h3>微信收款码</h3>
@@ -3671,20 +3691,20 @@
       const select = document.getElementById("paymentCouponSelect");
       if (!select) return;
       const plan = plansCache.find(item => Number(item.id) === Number(order.plan_id));
-      select.innerHTML = '<option value="">??????</option>' + myCouponsCache.filter(item => {
+      select.innerHTML = '<option value="">不使用优惠券</option>' + myCouponsCache.filter(item => {
         const c = item.coupon || {};
         if (c.type === "quota_bonus") return false;
         if (c.applicable_plans && plan && !c.applicable_plans.includes(plan.code)) return false;
         if (Number(order.original_amount || order.amount || 0) < Number(c.min_amount || 0)) return false;
         return true;
-      }).map(item => `<option value="${item.id}">${escapeHtml(item.coupon.name)} ? ${couponValueText(item.coupon)}</option>`).join("");
-      document.getElementById("couponPreview").textContent = "?????????????????";
+      }).map(item => `<option value="${item.id}">${escapeHtml(item.coupon.name)}｜${couponValueText(item.coupon)}</option>`).join("");
+      document.getElementById("couponPreview").textContent = "输入券码或选择券后这里显示优惠详情";
     }
 
     function couponValueText(coupon) {
-      if (coupon.type === "amount_off") return `? ${Number(coupon.value || 0).toFixed(2)} ?`;
-      if (coupon.type === "discount") return `${Number(coupon.value || 1) * 10} ?`;
-      return `? ${Number(coupon.value || 0)} ???`;
+      if (coupon.type === "amount_off") return `减 ${Number(coupon.value || 0).toFixed(2)} 元`;
+      if (coupon.type === "discount") return `${Number(coupon.value || 1) * 10} 折`;
+      return `赠 ${Number(coupon.value || 0)} 次额度`;
     }
 
     async function previewCouponOrder() {
@@ -3694,9 +3714,9 @@
         const order = await apiPost("/api/v1/orders/create", { plan_id: pendingPlanId, user_coupon_id: userCouponId });
         openPaymentModal(order);
         document.getElementById("paymentCouponSelect").value = String(userCouponId);
-        document.getElementById("couponPreview").textContent = `??? ?${Number(order.discount_amount || 0).toFixed(2)}??? ?${Number(order.amount || 0).toFixed(2)}`;
+        document.getElementById("couponPreview").textContent = `已优惠 ¥${Number(order.discount_amount || 0).toFixed(2)}，应付 ¥${Number(order.amount || 0).toFixed(2)}`;
       } catch (error) {
-        alert(error.message || "??????");
+        alert(error.message || "领取失败");
       }
     }
 
@@ -3711,7 +3731,7 @@
         renderCoupons(grouped);
         document.getElementById("couponsModal").classList.add("active");
       } catch (error) {
-        alert(error.message || "???????");
+        alert(error.message || "加载优惠券失败");
       }
     }
 
@@ -3719,28 +3739,32 @@
 
     function renderCoupons(grouped) {
       const all = [...(grouped.unused || []), ...(grouped.used || []), ...(grouped.expired || [])];
-      document.getElementById("couponsList").innerHTML = all.map(item => `<div class="admin-mini-item"><strong>${escapeHtml(item.coupon?.name || "????")}</strong>?${couponValueText(item.coupon || {})}?${escapeHtml(item.status || "")}??? ${formatDateTime(item.expire_at)}</div>`).join("") || '<div class="muted">??????</div>';
+      document.getElementById("couponsList").innerHTML = all.map(item => `<div class="admin-mini-item"><strong>${escapeHtml(item.coupon?.name || "未命名券")}</strong>｜${couponValueText(item.coupon || {})}｜${escapeHtml(item.status || "")}｜到期 ${formatDateTime(item.expire_at)}</div>`).join("") || '<div class="muted">暂无可用券</div>';
     }
 
     async function redeemCoupon() {
       const code = document.getElementById("couponCodeInput").value.trim();
-      if (!code) return alert("?????");
+      if (!code) return alert("请输入券码");
       await apiPost("/api/v1/coupons/redeem", { code });
-      showToast("????");
+      showToast("领取成功");
       await openCouponsModal();
     }
 
     async function openInviteModal() {
       const data = await apiGet("/api/v1/invitations/my");
       latestInviteLink = new URL(data.share_url, location.origin).href;
-      document.getElementById("inviteInfo").innerHTML = `<div class="admin-mini-item"><strong>Invite code: ${escapeHtml(data.my_invite_code || "")}</strong></div><div class="admin-mini-item">Link: ${escapeHtml(latestInviteLink)}</div><div class="admin-mini-item">Total reward: ${Number(data.total_reward || 0)}</div>` + (data.invited_users || []).map(item => `<div class="admin-mini-item">${escapeHtml(item.phone || "")} | ${escapeHtml(item.status || "")} | ${formatDateTime(item.rewarded_at || item.created_at)}</div>`).join("");
+      document.getElementById("inviteInfo").innerHTML = `<div class="admin-mini-item"><strong>我的邀请码：${escapeHtml(data.my_invite_code || "")}</strong></div><div class="admin-mini-item">邀请链接：${escapeHtml(latestInviteLink)}</div><div class="admin-mini-item">累计奖励：${Number(data.total_reward || 0)} 次</div>` + (data.invited_users || []).map(item => `<div class="admin-mini-item">${escapeHtml(item.phone || "")} | ${escapeHtml(item.status || "")} | ${formatDateTime(item.rewarded_at || item.created_at)}</div>`).join("");
       drawInviteQr(latestInviteLink);
       document.getElementById("inviteModal").classList.add("active");
     }
 
     function closeInviteModal() { document.getElementById("inviteModal").classList.remove("active"); }
 
-    async function copyInviteLink() { await navigator.clipboard.writeText(latestInviteLink); showToast("?????"); }
+    function openMyCouponsModal() { return openCouponsModal(); }
+
+    function openInvitationModal() { return openInviteModal(); }
+
+    async function copyInviteLink() { await navigator.clipboard.writeText(latestInviteLink); showToast("链接已复制"); }
 
     function drawInviteQr(text) {
       const canvas = document.getElementById("inviteQr");
@@ -3890,9 +3914,8 @@
         showAdminLogin("无权限访问，请使用管理员手机号登录。");
         return;
       }
-      loginBox.classList.add("hidden");
+      hideAdminLogin();
       message.textContent = "已进入管理员后台";
-      document.getElementById("adminContent").classList.remove("hidden");
       document.getElementById("adminName").textContent = currentUser.nickname || currentUser.phone || "管理员";
       await switchAdminTab("dashboard");
     }
@@ -3933,8 +3956,8 @@
         plansCache = meData.plans || [];
         sessionStorage.setItem(ADMIN_VERIFIED_KEY, currentUser.phone);
         hideAdminLogin();
-        document.getElementById("adminAccessMessage").textContent = "????????";
-        document.getElementById("adminName").textContent = currentUser.nickname || currentUser.phone || "???";
+        document.getElementById("adminAccessMessage").textContent = "已进入管理员后台";
+        document.getElementById("adminName").textContent = currentUser.nickname || currentUser.phone || "管理员";
         await switchAdminTab("dashboard");
       } catch (error) {
         alert(error.message || "管理员登录失败");
@@ -3951,12 +3974,15 @@
         users: ["用户管理", "用户检索、备注、额度调整"],
         orders: ["订单管理", "人工付款订单审核"],
         revenue: ["营收分析", "营收、客单价、套餐结构"],
-        refunds: ["退款管理", "退款申请人工处理"]
+        refunds: ["退款管理", "退款申请人工处理"],
+        coupons: ["推广券", "券模板、发放与核销"],
+        invitations: ["邀请活动", "邀请关系和奖励"]
       };
       const [title, subtitle] = titleMap[tab] || titleMap.dashboard;
       document.getElementById("adminTitle").textContent = title;
       document.getElementById("adminSubtitle").textContent = subtitle;
-      const panel = document.getElementById(`admin${tab[0].toUpperCase()}${tab.slice(1)}Panel`);
+      const panelIdMap = { coupons: "adminPanel-coupons", invitations: "adminPanel-invitations" };
+      const panel = document.getElementById(panelIdMap[tab] || `admin${tab[0].toUpperCase()}${tab.slice(1)}Panel`);
       if (panel) panel.classList.remove("hidden");
       if (tab === "dashboard") await loadAdminDashboard();
       if (tab === "users") await loadAdminUsers();
@@ -4225,21 +4251,21 @@
       try {
         const data = await apiGet("/api/v1/admin/coupons");
         const coupons = data.coupons || [];
-        document.getElementById("adminCouponsList").innerHTML = coupons.map(c => `<div class="admin-order-item"><div><strong>${escapeHtml(c.name)}</strong><span class="order-status">${escapeHtml(c.status)}</span><div class="order-meta"><span>${escapeHtml(c.code)}</span><span>${escapeHtml(c.type)}</span><span>${couponValueText(c)}</span><span>${Number(c.used_count || 0)}/${Number(c.total_quota || -1) < 0 ? "??" : c.total_quota}</span></div></div><div class="actions"><button class="btn ghost" onclick="toggleCoupon(${c.id}, '${c.status === "active" ? "paused" : "active"}')">${c.status === "active" ? "??" : "??"}</button><button class="btn" onclick="distributeCoupon(${c.id})">????</button><button class="btn ghost" onclick="showCouponUsage(${c.id})">????</button></div></div>`).join("") || '<div class="muted">??????</div>';
+        document.getElementById("adminCouponsList").innerHTML = coupons.map(c => `<div class="admin-order-item"><div><strong>${escapeHtml(c.name)}</strong><span class="order-status">${escapeHtml(c.status)}</span><div class="order-meta"><span>${escapeHtml(c.code)}</span><span>${escapeHtml(c.type)}</span><span>${couponValueText(c)}</span><span>${Number(c.used_count || 0)}/${Number(c.total_quota || -1) < 0 ? "不限" : c.total_quota}</span></div></div><div class="actions"><button class="btn ghost" onclick="toggleCoupon(${c.id}, '${c.status === "active" ? "paused" : "active"}')">${c.status === "active" ? "暂停" : "启用"}</button><button class="btn" onclick="distributeCoupon(${c.id})">批量发放</button><button class="btn ghost" onclick="showCouponUsage(${c.id})">使用记录</button></div></div>`).join("") || '<div class="muted">暂无推广券</div>';
       } catch (error) {
-        document.getElementById("adminCouponsList").innerHTML = `<div class="muted">${escapeHtml(error.message || "???????")}</div>`;
+        document.getElementById("adminCouponsList").innerHTML = `<div class="muted">${escapeHtml(error.message || "加载券列表失败")}</div>`;
       }
     }
 
     async function createAdminCoupon() {
-      const name = prompt("???", "?????? 30");
+      const name = prompt("券名称", "新人首单立减 30");
       if (!name) return;
-      const code = prompt("??", `NEWUSER${new Date().getFullYear()}`) || "";
-      const type = prompt("???amount_off / discount / quota_bonus", "amount_off") || "amount_off";
-      const value = Number(prompt("?????/??/????", "30") || 0);
-      const min_amount = Number(prompt("??????", "0") || 0);
+      const code = prompt("券码", `NEWUSER${new Date().getFullYear()}`) || "";
+      const type = prompt("券类型（amount_off / discount / quota_bonus）", "amount_off") || "amount_off";
+      const value = Number(prompt("券的减免金额 / 折扣 / 赠送额度", "30") || 0);
+      const min_amount = Number(prompt("最低订单金额", "0") || 0);
       await apiPost("/api/v1/admin/coupons", { name, code, type, value, min_amount, total_quota: -1, status: "active" });
-      showToast("????");
+      showToast("已创建");
       await loadAdminCoupons();
     }
 
@@ -4249,25 +4275,25 @@
     }
 
     async function distributeCoupon(id) {
-      const users = prompt("????ID????????", "");
+      const users = prompt("批量发放的用户 ID（逗号分隔）", "");
       if (!users) return;
       await apiPost(`/api/v1/admin/coupons/${id}/distribute`, { user_ids: users.split(",").map(v => v.trim()).filter(Boolean) });
-      showToast("???");
+      showToast("已发放");
     }
 
     async function showCouponUsage(id) {
       const data = await apiGet(`/api/v1/admin/coupons/${id}/usage`);
-      alert((data.records || []).map(r => `${r.phone || r.user_id}?${r.status}?${r.used_order_no || ""}`).join("\n") || "????");
+      alert((data.records || []).map(r => `${r.phone || r.user_id}|${r.status}|${r.used_order_no || ""}`).join("\n") || "暂无使用记录");
     }
 
     async function loadAdminInvitations() {
       try {
         const data = await apiGet("/api/v1/admin/invitations");
         const s = data.summary || {};
-        document.getElementById("adminInvitationMetrics").innerHTML = [["????", s.today || 0], ["????", s.total || 0], ["?????", s.reward_total || 0]].map(([label, value]) => `<div class="admin-metric"><strong>${value}</strong><span class="muted">${label}</span></div>`).join("");
-        document.getElementById("adminInvitationsList").innerHTML = (data.invitations || []).map(item => `<div class="admin-mini-item">${escapeHtml(item.inviter_phone || "")} ?? ${escapeHtml(item.invitee_phone || "")}?${escapeHtml(item.status || "")}?${formatDateTime(item.rewarded_at || item.created_at)}</div>`).join("") || '<div class="muted">???????</div>';
+        document.getElementById("adminInvitationMetrics").innerHTML = [["今日邀请", s.today || 0], ["总邀请数", s.total || 0], ["累计奖励", s.reward_total || 0]].map(([label, value]) => `<div class="admin-metric"><strong>${value}</strong><span class="muted">${label}</span></div>`).join("");
+        document.getElementById("adminInvitationsList").innerHTML = (data.invitations || []).map(item => `<div class="admin-mini-item">${escapeHtml(item.inviter_phone || "")} → ${escapeHtml(item.invitee_phone || "")}|${escapeHtml(item.status || "")}|${formatDateTime(item.rewarded_at || item.created_at)}</div>`).join("") || '<div class="muted">暂无邀请记录</div>';
       } catch (error) {
-        document.getElementById("adminInvitationsList").innerHTML = `<div class="muted">${escapeHtml(error.message || "????????")}</div>`;
+        document.getElementById("adminInvitationsList").innerHTML = `<div class="muted">${escapeHtml(error.message || "加载邀请记录失败")}</div>`;
       }
     }
 
