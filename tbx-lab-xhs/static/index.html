@@ -1052,6 +1052,120 @@
       color: #ffffff;
       border-color: #3157ff;
     }
+    .admin-shell {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+    }
+    .admin-sidebar {
+      position: sticky;
+      top: 18px;
+      display: grid;
+      gap: 8px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 12px;
+    }
+    .admin-sidebar button {
+      border: 0;
+      border-radius: 8px;
+      padding: 12px;
+      background: transparent;
+      text-align: left;
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .admin-sidebar button.active {
+      background: #3157ff;
+      color: #ffffff;
+    }
+    .admin-main {
+      min-width: 0;
+      display: grid;
+      gap: 14px;
+    }
+    .admin-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .admin-panel.hidden { display: none; }
+    .admin-metrics {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .admin-metric {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 12px;
+    }
+    .admin-metric strong {
+      display: block;
+      font-size: 22px;
+      margin-bottom: 4px;
+    }
+    .admin-charts {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .admin-chart {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #ffffff;
+      padding: 12px;
+    }
+    .admin-chart svg {
+      width: 100%;
+      height: 160px;
+      display: block;
+      overflow: visible;
+    }
+    .admin-filter-row {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 12px;
+    }
+    .admin-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .admin-table th,
+    .admin-table td {
+      font-size: 13px;
+      vertical-align: top;
+    }
+    .admin-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .admin-detail-section {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 12px;
+      background: #ffffff;
+    }
+    .admin-detail-section.full { grid-column: 1 / -1; }
+    .admin-mini-list {
+      display: grid;
+      gap: 8px;
+      max-height: 320px;
+      overflow: auto;
+    }
+    .admin-mini-item {
+      border: 1px solid #eef2f7;
+      border-radius: 8px;
+      padding: 10px;
+      background: #f8fafc;
+    }
     .screenshot-thumb {
       width: 72px;
       height: 72px;
@@ -1855,7 +1969,7 @@
 
   <div class="admin-page" id="adminPage">
     <div class="admin-card">
-      <h1>订单管理</h1>
+      <h1>特别想-Lab 管理后台</h1>
       <div id="adminAccessMessage" class="muted">正在校验管理员权限。</div>
       <div id="adminLoginBox" class="admin-login-box hidden">
         <label class="field"><span>管理员手机号</span><input id="adminLoginPhone" inputmode="tel" placeholder="请输入管理员手机号"></label>
@@ -1867,19 +1981,90 @@
       </div>
     </div>
     <div id="adminContent" class="hidden">
-      <div class="admin-summary">
-        <div class="admin-stat"><strong id="adminTodayOrders">0</strong><br><span class="muted">今日新增订单</span></div>
-        <div class="admin-stat"><strong id="adminPendingOrders">0</strong><br><span class="muted">待确认订单</span></div>
-        <div class="admin-stat"><strong id="adminTodayRevenue">0</strong><br><span class="muted">今日营收</span></div>
-      </div>
-      <div class="admin-card">
-        <div class="admin-tabs">
-          <button class="btn ghost active" data-admin-status="paid_pending" onclick="loadAdminOrders('paid_pending', this)">待确认</button>
-          <button class="btn ghost" data-admin-status="confirmed" onclick="loadAdminOrders('confirmed', this)">已开通</button>
-          <button class="btn ghost" data-admin-status="cancelled" onclick="loadAdminOrders('cancelled', this)">已取消</button>
-          <button class="btn ghost" data-admin-status="all" onclick="loadAdminOrders('all', this)">全部</button>
+      <div class="admin-shell">
+        <aside class="admin-sidebar">
+          <button class="active" data-admin-tab="dashboard" onclick="switchAdminTab('dashboard', this)">📊 数据看板</button>
+          <button data-admin-tab="users" onclick="switchAdminTab('users', this)">👥 用户管理</button>
+          <button data-admin-tab="orders" onclick="switchAdminTab('orders', this)">📦 订单管理</button>
+          <button data-admin-tab="revenue" onclick="switchAdminTab('revenue', this)">💰 营收分析</button>
+          <button data-admin-tab="refunds" onclick="switchAdminTab('refunds', this)">🔄 退款管理</button>
+        </aside>
+        <div class="admin-main">
+          <div class="admin-card admin-top">
+            <div>
+              <strong id="adminTitle">数据看板</strong>
+              <div class="muted" id="adminSubtitle">关键指标与趋势</div>
+            </div>
+            <div class="actions">
+              <span class="count-badge" id="adminName">管理员</span>
+              <button class="btn ghost" onclick="logout()">退出</button>
+            </div>
+          </div>
+
+          <section class="admin-panel" id="adminDashboardPanel">
+            <div class="admin-metrics" id="adminDashboardMetrics"></div>
+            <div class="admin-charts">
+              <div class="admin-chart"><h3>最近 30 天新增用户</h3><div id="adminUserTrend"></div></div>
+              <div class="admin-chart"><h3>最近 30 天营收</h3><div id="adminRevenueTrend"></div></div>
+            </div>
+          </section>
+
+          <section class="admin-panel hidden" id="adminUsersPanel">
+            <div class="admin-card">
+              <div class="admin-filter-row">
+                <label class="field"><span>套餐</span><select id="adminUserPlan"><option value="">全部</option><option value="free">免费</option><option value="monthly">月卡</option><option value="quarterly">季卡</option><option value="yearly">年卡</option></select></label>
+                <label class="field"><span>活跃度</span><select id="adminUserActive"><option value="">全部</option><option value="7d">7 天活跃</option><option value="30d">30 天活跃</option><option value="silent30">30 天沉默</option></select></label>
+                <label class="field"><span>开始</span><input id="adminUserStart" type="date"></label>
+                <label class="field"><span>结束</span><input id="adminUserEnd" type="date"></label>
+                <label class="field"><span>搜索</span><input id="adminUserSearch" placeholder="手机号/昵称"></label>
+                <div class="actions"><button class="btn" onclick="loadAdminUsers()">查询</button><button class="btn ghost" onclick="exportAdminUsers()">导出 CSV</button></div>
+              </div>
+              <div id="adminUsersList"></div>
+            </div>
+          </section>
+
+          <section class="admin-panel hidden" id="adminOrdersPanel">
+            <div class="admin-summary">
+              <div class="admin-stat"><strong id="adminTodayOrders">0</strong><br><span class="muted">今日新增订单</span></div>
+              <div class="admin-stat"><strong id="adminPendingOrders">0</strong><br><span class="muted">待确认订单</span></div>
+              <div class="admin-stat"><strong id="adminTodayRevenue">0</strong><br><span class="muted">今日营收</span></div>
+            </div>
+            <div class="admin-card">
+              <div class="admin-tabs">
+                <button class="btn ghost active" data-admin-status="paid_pending" onclick="loadAdminOrders('paid_pending', this)">待确认</button>
+                <button class="btn ghost" data-admin-status="confirmed" onclick="loadAdminOrders('confirmed', this)">已开通</button>
+                <button class="btn ghost" data-admin-status="cancelled" onclick="loadAdminOrders('cancelled', this)">已取消</button>
+                <button class="btn ghost" data-admin-status="all" onclick="loadAdminOrders('all', this)">全部</button>
+              </div>
+              <div id="adminOrdersList" class="admin-order-list"></div>
+            </div>
+          </section>
+
+          <section class="admin-panel hidden" id="adminRevenuePanel">
+            <div class="admin-card">
+              <div class="actions">
+                <select id="adminRevenuePeriod" onchange="loadAdminRevenue()">
+                  <option value="today">今日</option><option value="week">本周</option><option value="month" selected>本月</option><option value="year">本年</option><option value="custom">自定义</option>
+                </select>
+                <input id="adminRevenueStart" type="date">
+                <input id="adminRevenueEnd" type="date">
+                <button class="btn" onclick="loadAdminRevenue()">刷新</button>
+              </div>
+            </div>
+            <div class="admin-metrics" id="adminRevenueMetrics"></div>
+            <div class="admin-charts">
+              <div class="admin-chart"><h3>营收趋势</h3><div id="adminRevenueMainTrend"></div></div>
+              <div class="admin-chart"><h3>套餐结构</h3><div id="adminPlanMix"></div></div>
+            </div>
+          </section>
+
+          <section class="admin-panel hidden" id="adminRefundsPanel">
+            <div class="admin-card">
+              <h2>退款管理</h2>
+              <div id="adminRefundsList" class="admin-order-list"></div>
+            </div>
+          </section>
         </div>
-        <div id="adminOrdersList" class="admin-order-list"></div>
       </div>
     </div>
   </div>
@@ -2012,6 +2197,28 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="refundModal">
+    <div class="modal" style="width:min(640px,100%)">
+      <h2>申请退款</h2>
+      <div id="refundOrderInfo" class="muted"></div>
+      <label class="field"><span>退款原因</span><textarea id="refundReason" placeholder="请填写退款原因，管理员会人工审核"></textarea></label>
+      <div class="actions" style="margin-top:16px">
+        <button class="btn" onclick="submitRefundRequest()">提交退款申请</button>
+        <button class="btn ghost" onclick="closeRefundModal()">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="adminUserDetailModal">
+    <div class="modal" style="width:min(1080px,100%)">
+      <h2>用户详情</h2>
+      <div id="adminUserDetail"></div>
+      <div class="actions" style="margin-top:16px">
+        <button class="btn ghost" onclick="closeAdminUserDetail()">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="screenshotModal">
     <div class="modal" style="width:min(900px,100%)">
       <h2>付款截图</h2>
@@ -2055,6 +2262,8 @@
     let currentOrder = null;
     let paymentScreenshotBase64 = "";
     let currentAdminStatus = "paid_pending";
+    let currentRefundOrder = null;
+    let currentAdminUserId = "";
 
     function authHeaders() {
       const token = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -2150,7 +2359,7 @@
     function resetOrderUi() {
       currentOrder = null;
       paymentScreenshotBase64 = "";
-      ["ordersModal", "paymentModal", "screenshotModal"].forEach(id => {
+      ["ordersModal", "paymentModal", "refundModal", "screenshotModal", "adminUserDetailModal"].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.remove("active");
       });
@@ -3398,7 +3607,9 @@
         paid_pending: "待管理员确认",
         confirmed: "已开通",
         cancelled: "已取消",
-        refunded: "已退款"
+        refund_requested: "退款审核中",
+        refunded: "已退款",
+        refund_rejected: "退款被拒"
       };
       return labels[status] || status || "-";
     }
@@ -3504,6 +3715,7 @@
       }
       box.innerHTML = visibleOrders.map(order => {
         const canPay = order.status === "pending";
+        const canRefund = order.status === "confirmed";
         return `<div class="order-item">
           <div>
             <strong>${escapeHtml(order.plan_name || "套餐")}</strong>
@@ -3517,9 +3729,35 @@
           </div>
           <div class="actions">
             ${canPay ? `<button class="btn" onclick='openPaymentModal(${JSON.stringify(order)})'>继续付款</button>` : ""}
+            ${canRefund ? `<button class="btn ghost" onclick='openRefundModal(${JSON.stringify(order)})'>申请退款</button>` : ""}
           </div>
         </div>`;
       }).join("");
+    }
+
+    function openRefundModal(order) {
+      currentRefundOrder = order;
+      document.getElementById("refundOrderInfo").textContent = `${order.plan_name || "套餐"} · ${order.order_no || ""} · ¥${Number(order.amount || 0).toFixed(2)}`;
+      document.getElementById("refundReason").value = "";
+      document.getElementById("refundModal").classList.add("active");
+    }
+
+    function closeRefundModal() {
+      document.getElementById("refundModal").classList.remove("active");
+    }
+
+    async function submitRefundRequest() {
+      if (!currentRefundOrder?.order_no) return alert("订单信息异常");
+      const reason = document.getElementById("refundReason").value.trim();
+      if (!reason) return alert("请填写退款原因");
+      try {
+        await apiPost(`/api/v1/orders/${encodeURIComponent(currentRefundOrder.order_no)}/request-refund`, { reason });
+        closeRefundModal();
+        showToast("退款申请已提交");
+        await openOrdersModal();
+      } catch (error) {
+        alert(error.message || "退款申请失败");
+      }
     }
 
     function showScreenshot(src) {
@@ -3558,9 +3796,10 @@
         return;
       }
       loginBox.classList.add("hidden");
-      message.textContent = "已进入管理员订单后台";
+      message.textContent = "已进入管理员后台";
       document.getElementById("adminContent").classList.remove("hidden");
-      await loadAdminOrders("paid_pending");
+      document.getElementById("adminName").textContent = currentUser.nickname || currentUser.phone || "管理员";
+      await switchAdminTab("dashboard");
     }
 
     function showAdminLogin(messageText) {
@@ -3597,6 +3836,282 @@
       } catch (error) {
         alert(error.message || "管理员登录失败");
       }
+    }
+
+    async function switchAdminTab(tab, button) {
+      document.querySelectorAll(".admin-sidebar button").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.adminTab === tab);
+      });
+      document.querySelectorAll(".admin-panel").forEach(panel => panel.classList.add("hidden"));
+      const titleMap = {
+        dashboard: ["数据看板", "关键指标与趋势"],
+        users: ["用户管理", "用户检索、备注、额度调整"],
+        orders: ["订单管理", "人工付款订单审核"],
+        revenue: ["营收分析", "营收、客单价、套餐结构"],
+        refunds: ["退款管理", "退款申请人工处理"]
+      };
+      const [title, subtitle] = titleMap[tab] || titleMap.dashboard;
+      document.getElementById("adminTitle").textContent = title;
+      document.getElementById("adminSubtitle").textContent = subtitle;
+      const panel = document.getElementById(`admin${tab[0].toUpperCase()}${tab.slice(1)}Panel`);
+      if (panel) panel.classList.remove("hidden");
+      if (tab === "dashboard") await loadAdminDashboard();
+      if (tab === "users") await loadAdminUsers();
+      if (tab === "orders") await loadAdminOrders(currentAdminStatus || "paid_pending");
+      if (tab === "revenue") await loadAdminRevenue();
+      if (tab === "refunds") await loadAdminRefunds();
+    }
+
+    function renderLineChart(points) {
+      const values = (points || []).map(point => Number(point.value || 0));
+      const max = Math.max(1, ...values);
+      const width = 520;
+      const height = 150;
+      const step = values.length > 1 ? width / (values.length - 1) : width;
+      const poly = values.map((value, index) => {
+        const x = index * step;
+        const y = height - (value / max) * 120 - 12;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(" ");
+      return `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none"><polyline points="${poly}" fill="none" stroke="#3157ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline></svg>`;
+    }
+
+    function renderBarChart(points) {
+      const values = (points || []).map(point => Number(point.value || 0));
+      const max = Math.max(1, ...values);
+      const width = 520;
+      const height = 150;
+      const barW = values.length ? width / values.length - 3 : 10;
+      const bars = values.map((value, index) => {
+        const h = Math.max(3, (value / max) * 122);
+        const x = index * (barW + 3);
+        const y = height - h - 10;
+        return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, barW).toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="#3157ff"></rect>`;
+      }).join("");
+      return `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">${bars}</svg>`;
+    }
+
+    async function loadAdminDashboard() {
+      try {
+        const data = await apiGet("/api/v1/admin/dashboard");
+        const m = data.metrics || {};
+        const cards = [
+          ["今日新增用户", m.today_users || 0],
+          ["今日新增订单", m.today_orders || 0],
+          ["今日营收", `¥${Number(m.today_revenue || 0).toFixed(2)}`],
+          ["本月营收", `¥${Number(m.month_revenue || 0).toFixed(2)}`],
+          ["累计付费用户", m.paid_users || 0],
+          ["7 天活跃用户", m.active_users || 0]
+        ];
+        document.getElementById("adminDashboardMetrics").innerHTML = cards.map(([label, value]) => `<div class="admin-metric"><strong>${value}</strong><span class="muted">${label}</span></div>`).join("");
+        document.getElementById("adminUserTrend").innerHTML = renderLineChart(data.new_users_30d || []);
+        document.getElementById("adminRevenueTrend").innerHTML = renderBarChart(data.revenue_30d || []);
+      } catch (error) {
+        document.getElementById("adminDashboardMetrics").innerHTML = `<div class="muted">${escapeHtml(error.message || "数据看板加载失败")}</div>`;
+      }
+    }
+
+    async function loadAdminUsers() {
+      const params = new URLSearchParams({
+        plan: document.getElementById("adminUserPlan")?.value || "",
+        active: document.getElementById("adminUserActive")?.value || "",
+        search: document.getElementById("adminUserSearch")?.value || "",
+        start: document.getElementById("adminUserStart")?.value || "",
+        end: document.getElementById("adminUserEnd")?.value || "",
+        page: "1",
+        size: "50"
+      });
+      try {
+        const data = await apiGet(`/api/v1/admin/users?${params.toString()}`);
+        renderAdminUsers(data.users || []);
+      } catch (error) {
+        document.getElementById("adminUsersList").innerHTML = `<div class="muted">${escapeHtml(error.message || "用户加载失败")}</div>`;
+      }
+    }
+
+    function renderAdminUsers(users) {
+      const box = document.getElementById("adminUsersList");
+      if (!users.length) {
+        box.innerHTML = `<div class="muted">没有符合条件的用户。</div>`;
+        return;
+      }
+      box.innerHTML = `<table class="admin-table"><thead><tr><th>用户</th><th>注册/活跃</th><th>套餐</th><th>额度</th><th>消费</th><th>生成</th><th>备注</th><th>操作</th></tr></thead><tbody>${users.map(user => `
+        <tr>
+          <td><strong>${escapeHtml(user.nickname || "用户")}</strong><br><span class="muted">${escapeHtml(user.phone || "")}${user.is_admin ? " · 管理员" : ""}</span></td>
+          <td>${formatDateTime(user.created_at)}<br><span class="muted">${formatDateTime(user.last_active_at)}</span></td>
+          <td>${escapeHtml(user.plan_name || "-")}<br><span class="muted">${formatDateTime(user.plan_expire_at)}</span></td>
+          <td>${Number(user.quota_remaining || 0)}</td>
+          <td>¥${Number(user.total_spent || 0).toFixed(2)}</td>
+          <td>${Number(user.usage_count || 0)}</td>
+          <td>${escapeHtml(user.admin_note || "")}</td>
+          <td><button class="btn ghost" onclick="openAdminUserDetail('${escapeHtml(user.id)}')">查看详情</button></td>
+        </tr>`).join("")}</tbody></table>`;
+    }
+
+    async function exportAdminUsers() {
+      const response = await fetch("/api/v1/admin/users/export.csv", { headers: authHeaders() });
+      if (!response.ok) return alert("导出失败");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "tbx-users.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function openAdminUserDetail(userId) {
+      currentAdminUserId = userId;
+      try {
+        const data = await apiGet(`/api/v1/admin/users/${encodeURIComponent(userId)}`);
+        const user = data.user || {};
+        const subs = data.subscriptions || [];
+        const orders = data.orders || [];
+        const usage = data.usage_logs || [];
+        const logs = data.operation_logs || [];
+        document.getElementById("adminUserDetail").innerHTML = `
+          <div class="admin-detail-grid">
+            <div class="admin-detail-section">
+              <h3>基本信息</h3>
+              <p><strong>${escapeHtml(user.nickname || "")}</strong> ${escapeHtml(user.phone || "")}</p>
+              <p class="muted">注册：${formatDateTime(user.created_at)}｜活跃：${formatDateTime(user.last_active_at)}</p>
+              <p>套餐：${escapeHtml(user.plan_name || "-")}｜额度：${Number(user.quota_remaining || 0)}｜消费：¥${Number(user.total_spent || 0).toFixed(2)}</p>
+            </div>
+            <div class="admin-detail-section">
+              <h3>管理员备注</h3>
+              <textarea id="adminUserNote">${escapeHtml(user.admin_note || "")}</textarea>
+              <div class="actions"><button class="btn" onclick="saveAdminUserNote()">保存备注</button></div>
+            </div>
+            <div class="admin-detail-section">
+              <h3>管理员操作</h3>
+              <div class="actions">
+                <input id="adminQuotaDelta" type="number" placeholder="+/- 额度">
+                <input id="adminQuotaReason" placeholder="原因">
+                <button class="btn" onclick="adjustAdminQuota()">调整额度</button>
+                <button class="btn ghost" onclick="forceLogoutUser()">强制下线</button>
+                <button class="btn ghost" onclick="toggleAdminUser()">${user.is_admin ? "取消管理员" : "设为管理员"}</button>
+              </div>
+            </div>
+            <div class="admin-detail-section">
+              <h3>套餐变更记录</h3>
+              <div class="admin-mini-list">${subs.map(item => `<div class="admin-mini-item">${escapeHtml(item.plan_name || item.plan_id)}｜${formatDateTime(item.start_at)} - ${formatDateTime(item.end_at)}｜${escapeHtml(item.status || "")}</div>`).join("") || '<div class="muted">暂无记录</div>'}</div>
+            </div>
+            <div class="admin-detail-section">
+              <h3>订单历史</h3>
+              <div class="admin-mini-list">${orders.map(item => `<div class="admin-mini-item">${escapeHtml(item.order_no)}｜${escapeHtml(item.plan_name)}｜¥${Number(item.amount || 0).toFixed(2)}｜${statusLabel(item.status)}</div>`).join("") || '<div class="muted">暂无订单</div>'}</div>
+            </div>
+            <div class="admin-detail-section">
+              <h3>生成历史</h3>
+              <div class="admin-mini-list">${usage.map(item => `<div class="admin-mini-item">${formatDateTime(item.created_at)}｜${escapeHtml(item.action || "")}｜${item.quota_before} → ${item.quota_after}</div>`).join("") || '<div class="muted">暂无记录</div>'}</div>
+            </div>
+            <div class="admin-detail-section full">
+              <h3>操作日志</h3>
+              <div class="admin-mini-list">${logs.map(item => `<div class="admin-mini-item">${formatDateTime(item.created_at)}｜${escapeHtml(item.action || "")}｜${escapeHtml(item.detail || item.detail_json || "")}</div>`).join("") || '<div class="muted">暂无日志</div>'}</div>
+            </div>
+          </div>`;
+        document.getElementById("adminUserDetailModal").classList.add("active");
+      } catch (error) {
+        alert(error.message || "用户详情加载失败");
+      }
+    }
+
+    function closeAdminUserDetail() {
+      document.getElementById("adminUserDetailModal").classList.remove("active");
+    }
+
+    async function saveAdminUserNote() {
+      await apiPost(`/api/v1/admin/users/${encodeURIComponent(currentAdminUserId)}/note`, { note: document.getElementById("adminUserNote").value });
+      showToast("备注已保存");
+      await openAdminUserDetail(currentAdminUserId);
+    }
+
+    async function adjustAdminQuota() {
+      const delta = Number(document.getElementById("adminQuotaDelta").value || 0);
+      const reason = document.getElementById("adminQuotaReason").value.trim();
+      if (!delta) return alert("请输入要调整的额度");
+      await apiPost(`/api/v1/admin/users/${encodeURIComponent(currentAdminUserId)}/adjust-quota`, { delta, reason });
+      showToast("额度已调整");
+      await openAdminUserDetail(currentAdminUserId);
+    }
+
+    async function toggleAdminUser() {
+      if (!confirm("确认切换该用户的管理员身份？")) return;
+      await apiPost(`/api/v1/admin/users/${encodeURIComponent(currentAdminUserId)}/toggle-admin`, {});
+      showToast("管理员身份已更新");
+      await openAdminUserDetail(currentAdminUserId);
+    }
+
+    async function forceLogoutUser() {
+      if (!confirm("确认强制该用户重新登录？")) return;
+      await apiPost(`/api/v1/admin/users/${encodeURIComponent(currentAdminUserId)}/force-logout`, {});
+      showToast("已强制下线");
+    }
+
+    async function loadAdminRevenue() {
+      const params = new URLSearchParams({
+        period: document.getElementById("adminRevenuePeriod")?.value || "month",
+        start: document.getElementById("adminRevenueStart")?.value || "",
+        end: document.getElementById("adminRevenueEnd")?.value || ""
+      });
+      try {
+        const data = await apiGet(`/api/v1/admin/revenue?${params.toString()}`);
+        const s = data.summary || {};
+        const cards = [
+          ["营收总额", `¥${Number(s.revenue || 0).toFixed(2)}`],
+          ["订单数", s.orders || 0],
+          ["付费用户数", s.paid_users || 0],
+          ["平均客单价", `¥${Number(s.avg_order || 0).toFixed(2)}`],
+          ["ARPU", `¥${Number(s.arpu || 0).toFixed(2)}`]
+        ];
+        document.getElementById("adminRevenueMetrics").innerHTML = cards.map(([label, value]) => `<div class="admin-metric"><strong>${value}</strong><span class="muted">${label}</span></div>`).join("");
+        document.getElementById("adminRevenueMainTrend").innerHTML = renderBarChart(data.trend || []);
+        document.getElementById("adminPlanMix").innerHTML = `<div class="admin-mini-list">${(data.plans || []).map(item => `<div class="admin-mini-item">${escapeHtml(item.plan_name || "-")}｜订单 ${item.orders || 0}｜¥${Number(item.revenue || 0).toFixed(2)}</div>`).join("") || '<div class="muted">暂无营收</div>'}</div>`;
+      } catch (error) {
+        document.getElementById("adminRevenueMetrics").innerHTML = `<div class="muted">${escapeHtml(error.message || "营收加载失败")}</div>`;
+      }
+    }
+
+    async function loadAdminRefunds() {
+      try {
+        const data = await apiGet("/api/v1/admin/refunds");
+        renderAdminRefunds(data.orders || []);
+      } catch (error) {
+        document.getElementById("adminRefundsList").innerHTML = `<div class="muted">${escapeHtml(error.message || "退款加载失败")}</div>`;
+      }
+    }
+
+    function renderAdminRefunds(orders) {
+      const box = document.getElementById("adminRefundsList");
+      if (!orders.length) {
+        box.innerHTML = `<div class="muted">暂无待处理退款。</div>`;
+        return;
+      }
+      box.innerHTML = orders.map(order => `<div class="admin-order-item">
+        <div>
+          <strong>${escapeHtml(order.phone || order.nickname || "用户")}</strong>
+          <span class="order-status">${statusLabel(order.status)}</span>
+          <div class="order-meta"><span>${escapeHtml(order.order_no || "")}</span><span>${escapeHtml(order.plan_name || "")}</span><span>¥${Number(order.amount || 0).toFixed(2)}</span><span>原因：${escapeHtml(order.refund_reason || "")}</span></div>
+        </div>
+        <div class="actions">
+          <button class="btn" onclick="approveRefund('${escapeHtml(order.order_no)}')">同意退款</button>
+          <button class="btn ghost" onclick="rejectRefund('${escapeHtml(order.order_no)}')">拒绝</button>
+        </div>
+      </div>`).join("");
+    }
+
+    async function approveRefund(orderNo) {
+      if (!confirm("确认同意退款？系统会降级相关套餐，请管理员手动转账给用户。")) return;
+      await apiPost(`/api/v1/admin/refunds/${encodeURIComponent(orderNo)}/approve`, {});
+      showToast("已同意退款");
+      await loadAdminRefunds();
+    }
+
+    async function rejectRefund(orderNo) {
+      const reason = prompt("请输入拒绝退款原因", "不符合退款规则");
+      if (reason === null) return;
+      await apiPost(`/api/v1/admin/refunds/${encodeURIComponent(orderNo)}/reject`, { reason });
+      showToast("已拒绝退款");
+      await loadAdminRefunds();
     }
 
     async function loadAdminOrders(status = "paid_pending", button) {
