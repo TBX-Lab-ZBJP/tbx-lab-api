@@ -1789,7 +1789,7 @@
       <div class="topbar">
         <div>
           <h1>特别想-Lab小红书爆款文案专家</h1>
-          <div class="muted">面向餐饮、酒旅本地生活商家：基于行业爆款选题参考库，生成完整的小红书发布素材包。</div>
+          <div class="muted">面向本地生活商家：基于行业爆款选题参考库和当下热门话题，生成完整的小红书发布素材包。</div>
         </div>
         <div class="top-actions">
           <div class="user-chip" id="userChip">
@@ -2245,6 +2245,38 @@
       <img id="screenshotFull" class="screenshot-full" alt="付款截图">
       <div class="actions" style="margin-top:16px">
         <button class="btn ghost" onclick="closeScreenshotModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="couponsModal">
+    <div class="modal" style="width:min(560px,100%)">
+      <h2>🎟️ 我的优惠券</h2>
+      <div class="muted" style="margin-bottom:10px">输入券码领取，或查看已领取的优惠券。</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input id="couponCodeInput" placeholder="输入券码（如 NEWUSER2026）" style="flex:1">
+        <button class="btn" onclick="redeemCoupon()">领取</button>
+      </div>
+      <div id="couponsList" class="grid" style="gap:8px;max-height:380px;overflow-y:auto"></div>
+      <div class="actions" style="margin-top:16px;justify-content:flex-end">
+        <button class="btn ghost" onclick="closeCouponsModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="inviteModal">
+    <div class="modal" style="width:min(620px,100%)">
+      <h2>🎁 邀请有礼</h2>
+      <div class="muted" style="margin-bottom:12px">邀请好友注册并完成首次生成,双方各得 5 次额度。</div>
+      <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px">
+        <canvas id="inviteQr" width="180" height="180" style="border:1px solid #e6e6e6;border-radius:8px;background:#fff"></canvas>
+        <div style="flex:1;min-width:220px">
+          <div id="inviteInfo" class="grid" style="gap:8px"></div>
+          <button class="btn" style="margin-top:12px;width:100%" onclick="copyInviteLink()">复制邀请链接</button>
+        </div>
+      </div>
+      <div class="actions" style="margin-top:16px;justify-content:flex-end">
+        <button class="btn ghost" onclick="closeInviteModal()">关闭</button>
       </div>
     </div>
   </div>
