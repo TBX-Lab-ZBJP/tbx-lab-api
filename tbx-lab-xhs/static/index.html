@@ -1962,7 +1962,6 @@
           <div class="actions" style="margin:14px 0">
             <button class="btn" onclick="copyPublishText()">复制发布文案</button>
             <button class="btn ghost" onclick="downloadTextFile('特别想-Lab小红书发布素材包.txt', buildPublishText())">下载文案 TXT</button>
-            <button class="btn ghost" onclick="downloadMarkdownFile()">导出 .md 文件</button>
           </div>
           <h3>文案预览</h3>
           <pre id="materialCopyText">生成并确认后显示。</pre>
@@ -3432,16 +3431,6 @@
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-    }
-
-    function safeFilenamePart(text) {
-      return String(text || "未填写店名").replace(/[\\/:*?"<>|]/g, "").slice(0, 24) || "未填写店名";
-    }
-
-    function downloadMarkdownFile() {
-      const profile = getMerchantProfile() || {};
-      const date = new Date().toISOString().slice(0, 10);
-      downloadTextFile(`特别想-Lab素材包_${safeFilenamePart(profile.store_name)}_${date}.md`, buildPublishText());
     }
 
     function restoreDraft() {
