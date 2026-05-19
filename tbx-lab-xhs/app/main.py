@@ -2239,6 +2239,14 @@ async def draft(payload: DraftRequest, authorization: str | None = Header(defaul
     return result
 
 
+@app.get("/{full_path:path}")
+def spa_fallback(full_path: str) -> FileResponse:
+    path = (full_path or "").strip("/")
+    if path.startswith("api/") or path.startswith("static/"):
+        raise HTTPException(status_code=404, detail="Not Found")
+    return FileResponse(STATIC_DIR / "index.html")
+
+
 async def generate_with_hunyuan(user_input: dict[str, Any]) -> dict[str, Any]:
     api_key = os.getenv("HUNYUAN_API_KEY", "").strip()
     if not api_key:
