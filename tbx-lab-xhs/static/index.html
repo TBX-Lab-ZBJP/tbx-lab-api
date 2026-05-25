@@ -2100,8 +2100,16 @@
         <label class="field"><span>店名 *</span><input id="mpStoreName"></label>
         <label class="field"><span>品类 *</span><select id="mpCategory" onchange="updateMerchantCategoryHints()"><option>餐饮</option><option>酒旅</option></select></label>
         <label class="field"><span>省份 *</span><select id="mpProvince" onchange="handleProvinceChange()"></select></label>
-        <label class="field"><span>城市 *</span><input id="mpCity" list="mpCityList" oninput="handleCityChange()" placeholder="可下拉选择，也可手动输入"><datalist id="mpCityList"></datalist></label>
-        <label class="field"><span>商圈/区域 *</span><input id="mpDistrict" list="mpDistrictList" placeholder="可下拉选择，也可手动输入"><datalist id="mpDistrictList"></datalist></label>
+        <div class="field">
+          <span>城市 *</span>
+          <select id="mpCitySelect" onchange="handleCitySelectChange()"></select>
+          <input id="mpCityCustom" class="hidden" placeholder="请输入城市">
+        </div>
+        <div class="field">
+          <span>商圈/区域 *</span>
+          <select id="mpDistrictSelect" onchange="handleDistrictSelectChange()"></select>
+          <input id="mpDistrictCustom" class="hidden" placeholder="请输入商圈/区域">
+        </div>
         <label class="field full"><span>详细地址 *</span><input id="mpAddress"></label>
         <label class="field"><span>人均价格 *</span><input id="mpAvgPrice" type="number" min="0"></label>
         <div class="field">
@@ -2620,14 +2628,6 @@
       }
     }
 
-    function setDatalistOptions(listId, inputId, options, selectedValue = "") {
-      const list = document.getElementById(listId);
-      const input = document.getElementById(inputId);
-      if (!list || !input) return;
-      list.innerHTML = options.map(option => `<option value="${escapeHtml(option)}"></option>`).join("");
-      input.value = selectedValue || input.value || options[0] || "";
-    }
-
     function inferProvinceByCity(city) {
       if (!city) return "山东省";
       for (const [province, cityMap] of Object.entries(REGION_OPTIONS)) {
@@ -2648,17 +2648,70 @@
       const provinceEl = document.getElementById("mpProvince");
       const province = provinceEl?.value || "山东省";
       const cities = Object.keys(REGION_OPTIONS[province] || REGION_OPTIONS["其他"]);
-      const city = preferredCity && cities.includes(preferredCity) ? preferredCity : cities[0];
-      setDatalistOptions("mpCityList", "mpCity", cities, preferredCity || city);
+      const city = preferredCity || cities[0];
+      const citySelect = document.getElementById("mpCitySelect");
+      const cityCustom = document.getElementById("mpCityCustom");
+      citySelect.innerHTML = cities.map(option => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join("") + `<option value="__custom__">手动输入其他城市</option>`;
+      if (cities.includes(city)) {
+        citySelect.value = city;
+        cityCustom.classList.add("hidden");
+        cityCustom.value = "";
+      } else {
+        citySelect.value = "__custom__";
+        cityCustom.classList.remove("hidden");
+        cityCustom.value = city;
+      }
       handleCityChange(preferredDistrict);
+    }
+
+    function getMerchantCityValue() {
+      const citySelect = document.getElementById("mpCitySelect");
+      if (citySelect?.value === "__custom__") return document.getElementById("mpCityCustom").value.trim();
+      return citySelect?.value || "";
     }
 
     function handleCityChange(preferredDistrict = "") {
       const province = document.getElementById("mpProvince")?.value || "山东省";
-      const city = document.getElementById("mpCity")?.value || Object.keys(REGION_OPTIONS[province] || REGION_OPTIONS["其他"])[0];
+      const city = getMerchantCityValue() || Object.keys(REGION_OPTIONS[province] || REGION_OPTIONS["其他"])[0];
       const districts = (REGION_OPTIONS[province] && REGION_OPTIONS[province][city]) || REGION_OPTIONS["其他"]["其他城市"];
       const district = preferredDistrict && districts.includes(preferredDistrict) ? preferredDistrict : districts[0];
-      setDatalistOptions("mpDistrictList", "mpDistrict", districts, preferredDistrict || district);
+      const districtSelect = document.getElementById("mpDistrictSelect");
+      const districtCustom = document.getElementById("mpDistrictCustom");
+      districtSelect.innerHTML = districts.map(option => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join("") + `<option value="__custom__">手动输入其他商圈/区域</option>`;
+      if ((preferredDistrict || district) && districts.includes(preferredDistrict || district)) {
+        districtSelect.value = preferredDistrict || district;
+        districtCustom.classList.add("hidden");
+        districtCustom.value = "";
+      } else if (preferredDistrict) {
+        districtSelect.value = "__custom__";
+        districtCustom.classList.remove("hidden");
+        districtCustom.value = preferredDistrict;
+      } else {
+        districtSelect.value = district;
+        districtCustom.classList.add("hidden");
+        districtCustom.value = "";
+      }
+    }
+
+    function handleCitySelectChange() {
+      const cityCustom = document.getElementById("mpCityCustom");
+      const isCustom = document.getElementById("mpCitySelect").value === "__custom__";
+      cityCustom.classList.toggle("hidden", !isCustom);
+      if (!isCustom) cityCustom.value = "";
+      handleCityChange();
+    }
+
+    function handleDistrictSelectChange() {
+      const districtCustom = document.getElementById("mpDistrictCustom");
+      const isCustom = document.getElementById("mpDistrictSelect").value === "__custom__";
+      districtCustom.classList.toggle("hidden", !isCustom);
+      if (!isCustom) districtCustom.value = "";
+    }
+
+    function getMerchantDistrictValue() {
+      const districtSelect = document.getElementById("mpDistrictSelect");
+      if (districtSelect?.value === "__custom__") return document.getElementById("mpDistrictCustom").value.trim();
+      return districtSelect?.value || "";
     }
 
     function setBusinessHours(value = "") {
@@ -2701,8 +2754,8 @@
         store_name: document.getElementById("mpStoreName").value.trim(),
         category: document.getElementById("mpCategory").value,
         province: document.getElementById("mpProvince").value,
-        city: document.getElementById("mpCity").value,
-        district: document.getElementById("mpDistrict").value,
+        city: getMerchantCityValue(),
+        district: getMerchantDistrictValue(),
         address: document.getElementById("mpAddress").value.trim(),
         avg_price: document.getElementById("mpAvgPrice").value.trim(),
         business_hours: `${document.getElementById("mpOpenTime").value}-${document.getElementById("mpCloseTime").value}`,
