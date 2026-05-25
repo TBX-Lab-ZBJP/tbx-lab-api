@@ -145,6 +145,11 @@
       min-height: 142px;
       resize: vertical;
     }
+    .time-select-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
     .btn {
       border: 0;
       border-radius: 8px;
@@ -2093,12 +2098,19 @@
       <h2>商家档案</h2>
       <div class="modal-grid">
         <label class="field"><span>店名 *</span><input id="mpStoreName"></label>
-        <label class="field"><span>品类 *</span><select id="mpCategory"><option>餐饮</option><option>酒旅</option></select></label>
-        <label class="field"><span>城市 *</span><input id="mpCity"></label>
-        <label class="field"><span>商圈/区域 *</span><input id="mpDistrict"></label>
+        <label class="field"><span>品类 *</span><select id="mpCategory" onchange="updateMerchantCategoryHints()"><option>餐饮</option><option>酒旅</option></select></label>
+        <label class="field"><span>省份 *</span><select id="mpProvince" onchange="handleProvinceChange()"></select></label>
+        <label class="field"><span>城市 *</span><select id="mpCity" onchange="handleCityChange()"></select></label>
+        <label class="field"><span>商圈/区域 *</span><select id="mpDistrict"></select></label>
         <label class="field full"><span>详细地址 *</span><input id="mpAddress"></label>
         <label class="field"><span>人均价格 *</span><input id="mpAvgPrice" type="number" min="0"></label>
-        <label class="field"><span>营业时间 *</span><input id="mpBusinessHours" placeholder="10:30-22:00"></label>
+        <div class="field">
+          <span>营业时间 *</span>
+          <div class="time-select-row">
+            <select id="mpOpenTime"></select>
+            <select id="mpCloseTime"></select>
+          </div>
+        </div>
         <label class="field full"><span>招牌产品 *（每行一个，最多 5 个）</span><textarea id="mpSignatureItems"></textarea></label>
         <label class="field full"><span>卖点关键词 *（每行一个，最多 5 个）</span><textarea id="mpSellingPoints"></textarea></label>
         <div class="field full">
@@ -2319,6 +2331,64 @@
     let myCouponsCache = [];
     let pendingPlanId = 0;
     let latestInviteLink = "";
+    const REGION_OPTIONS = {
+      "山东省": {
+        "威海市": ["环翠区", "文登区", "荣成市", "乳山市", "经区", "高区", "火炬八街", "韩乐坊", "那香海"],
+        "青岛市": ["市南区", "市北区", "崂山区", "李沧区", "黄岛区", "即墨区", "台东", "五四广场"],
+        "济南市": ["历下区", "市中区", "槐荫区", "天桥区", "历城区", "高新区", "泉城路"]
+      },
+      "北京市": {
+        "北京市": ["朝阳区", "海淀区", "东城区", "西城区", "丰台区", "通州区", "望京", "五道口", "三里屯", "国贸"]
+      },
+      "上海市": {
+        "上海市": ["黄浦区", "徐汇区", "静安区", "长宁区", "浦东新区", "虹口区", "陆家嘴", "新天地", "南京西路"]
+      },
+      "广东省": {
+        "广州市": ["天河区", "越秀区", "海珠区", "荔湾区", "番禺区", "珠江新城", "北京路"],
+        "深圳市": ["南山区", "福田区", "罗湖区", "宝安区", "龙岗区", "蛇口", "科技园", "车公庙"],
+        "佛山市": ["禅城区", "南海区", "顺德区", "祖庙", "岭南天地"]
+      },
+      "浙江省": {
+        "杭州市": ["西湖区", "上城区", "拱墅区", "滨江区", "萧山区", "西湖景区", "湖滨"],
+        "宁波市": ["海曙区", "鄞州区", "江北区", "东钱湖", "天一广场"]
+      },
+      "江苏省": {
+        "南京市": ["玄武区", "秦淮区", "建邺区", "鼓楼区", "新街口", "夫子庙"],
+        "苏州市": ["姑苏区", "工业园区", "吴中区", "相城区", "观前街", "金鸡湖"],
+        "无锡市": ["梁溪区", "滨湖区", "新吴区", "南长街", "太湖景区"]
+      },
+      "四川省": {
+        "成都市": ["锦江区", "青羊区", "武侯区", "成华区", "高新区", "春熙路", "太古里"]
+      },
+      "福建省": {
+        "厦门市": ["思明区", "湖里区", "集美区", "鼓浪屿", "曾厝垵", "中山路"],
+        "福州市": ["鼓楼区", "台江区", "仓山区", "晋安区", "三坊七巷"]
+      },
+      "海南省": {
+        "三亚市": ["吉阳区", "天涯区", "海棠区", "亚龙湾", "三亚湾", "海棠湾"],
+        "海口市": ["龙华区", "美兰区", "秀英区", "琼山区", "骑楼老街"]
+      },
+      "其他": {
+        "其他城市": ["市中心", "核心商圈", "景区周边", "社区门店", "大学城", "高新区", "交通枢纽"]
+      }
+    };
+    const BUSINESS_TIME_OPTIONS = [
+      "06:00", "06:30", "07:00", "07:30", "08:00", "08:30",
+      "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
+      "12:00", "13:00", "14:00", "15:00", "16:00", "17:00",
+      "18:00", "19:00", "20:00", "21:00", "22:00", "23:00",
+      "24:00", "次日02:00"
+    ];
+    const MERCHANT_HINTS = {
+      "餐饮": {
+        signature: "例：\n招牌手冲咖啡\n海鲜捞饭\n双人套餐\n儿童友好餐\n季节限定甜品",
+        selling: "例：\n免费停车\n靠窗座位\n适合家庭聚餐\n周末不用排太久\n老板亲自做"
+      },
+      "酒旅": {
+        signature: "例：\n海景大床房\n亲子家庭房\n露台套房\n双早套餐\n周末轻度假套餐",
+        selling: "例：\n一线海景\n步行到景区\n免费停车\n早餐好吃\n房间安静"
+      }
+    };
 
     function authHeaders() {
       const token = localStorage.getItem(AUTH_TOKEN_KEY);
@@ -2510,15 +2580,74 @@
       return readJson(PROFILE_KEY, null);
     }
 
+    function setSelectOptions(selectId, options, selectedValue = "") {
+      const el = document.getElementById(selectId);
+      if (!el) return;
+      el.innerHTML = options.map(option => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join("");
+      if (selectedValue && options.includes(selectedValue)) {
+        el.value = selectedValue;
+      }
+    }
+
+    function inferProvinceByCity(city) {
+      if (!city) return "山东省";
+      for (const [province, cityMap] of Object.entries(REGION_OPTIONS)) {
+        if (Object.keys(cityMap).includes(city)) return province;
+      }
+      return "其他";
+    }
+
+    function initMerchantSelects(profile = {}) {
+      const province = profile.province || inferProvinceByCity(profile.city);
+      setSelectOptions("mpProvince", Object.keys(REGION_OPTIONS), province);
+      handleProvinceChange(profile.city, profile.district);
+      setBusinessHours(profile.business_hours || "");
+      updateMerchantCategoryHints();
+    }
+
+    function handleProvinceChange(preferredCity = "", preferredDistrict = "") {
+      const provinceEl = document.getElementById("mpProvince");
+      const province = provinceEl?.value || "山东省";
+      const cities = Object.keys(REGION_OPTIONS[province] || REGION_OPTIONS["其他"]);
+      const city = preferredCity && cities.includes(preferredCity) ? preferredCity : cities[0];
+      setSelectOptions("mpCity", cities, city);
+      handleCityChange(preferredDistrict);
+    }
+
+    function handleCityChange(preferredDistrict = "") {
+      const province = document.getElementById("mpProvince")?.value || "山东省";
+      const city = document.getElementById("mpCity")?.value || Object.keys(REGION_OPTIONS[province] || REGION_OPTIONS["其他"])[0];
+      const districts = (REGION_OPTIONS[province] && REGION_OPTIONS[province][city]) || REGION_OPTIONS["其他"]["其他城市"];
+      const district = preferredDistrict && districts.includes(preferredDistrict) ? preferredDistrict : districts[0];
+      setSelectOptions("mpDistrict", districts, district);
+    }
+
+    function setBusinessHours(value = "") {
+      setSelectOptions("mpOpenTime", BUSINESS_TIME_OPTIONS, "09:00");
+      setSelectOptions("mpCloseTime", BUSINESS_TIME_OPTIONS, "22:00");
+      const match = String(value || "").match(/^(.+?)-(.+)$/);
+      if (match) {
+        if (BUSINESS_TIME_OPTIONS.includes(match[1])) document.getElementById("mpOpenTime").value = match[1];
+        if (BUSINESS_TIME_OPTIONS.includes(match[2])) document.getElementById("mpCloseTime").value = match[2];
+      }
+    }
+
+    function updateMerchantCategoryHints() {
+      const category = document.getElementById("mpCategory")?.value || "餐饮";
+      const hints = MERCHANT_HINTS[category] || MERCHANT_HINTS["餐饮"];
+      const signatureEl = document.getElementById("mpSignatureItems");
+      const sellingEl = document.getElementById("mpSellingPoints");
+      if (signatureEl) signatureEl.placeholder = hints.signature;
+      if (sellingEl) sellingEl.placeholder = hints.selling;
+    }
+
     function setMerchantForm(profile) {
       const data = profile || {};
       document.getElementById("mpStoreName").value = data.store_name || "";
       document.getElementById("mpCategory").value = data.category || "餐饮";
-      document.getElementById("mpCity").value = data.city || "";
-      document.getElementById("mpDistrict").value = data.district || "";
+      initMerchantSelects(data);
       document.getElementById("mpAddress").value = data.address || "";
       document.getElementById("mpAvgPrice").value = data.avg_price || "";
-      document.getElementById("mpBusinessHours").value = data.business_hours || "";
       document.getElementById("mpSignatureItems").value = (data.signature_items || []).join("\n");
       document.getElementById("mpSellingPoints").value = (data.selling_points || []).join("\n");
       document.getElementById("mpContact").value = data.contact || "";
@@ -2532,11 +2661,12 @@
       return {
         store_name: document.getElementById("mpStoreName").value.trim(),
         category: document.getElementById("mpCategory").value,
-        city: document.getElementById("mpCity").value.trim(),
-        district: document.getElementById("mpDistrict").value.trim(),
+        province: document.getElementById("mpProvince").value,
+        city: document.getElementById("mpCity").value,
+        district: document.getElementById("mpDistrict").value,
         address: document.getElementById("mpAddress").value.trim(),
         avg_price: document.getElementById("mpAvgPrice").value.trim(),
-        business_hours: document.getElementById("mpBusinessHours").value.trim(),
+        business_hours: `${document.getElementById("mpOpenTime").value}-${document.getElementById("mpCloseTime").value}`,
         signature_items: splitLines(document.getElementById("mpSignatureItems").value),
         selling_points: splitLines(document.getElementById("mpSellingPoints").value),
         group_buy_platforms: Array.from(document.querySelectorAll('input[name="mpPlatform"]:checked')).map(input => input.value),
