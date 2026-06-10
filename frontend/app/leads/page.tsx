@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { intentClassName } from "../lib/intent";
+import { Plan, fetchPlans, planLabel } from "../lib/plans";
 
-const API = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+const ADMIN_API = "/api/admin";
 
-type Filter = "all" | "contacted" | "opened" | "trial_7" | "full_365";
+// "all" / "contacted" / "opened" 是固定筛选；其余值为套餐 id（动态）。
+type Filter = string;
 type FollowupFilter = "all" | "due" | "scheduled" | "none";
 type ContactFilter = "all" | "uncontacted";
 
@@ -39,12 +41,11 @@ type User = {
   };
 };
 
-const filters: { id: Filter; label: string }[] = [
+// 固定筛选项；套餐相关的筛选项会在组件内按后端套餐动态拼接。
+const baseFilters: { id: Filter; label: string }[] = [
   { id: "all", label: "全部客户" },
   { id: "contacted", label: "已联系" },
-  { id: "opened", label: "已开通" },
-  { id: "trial_7", label: "开通 7 天" },
-  { id: "full_365", label: "开通 365 天" }
+  { id: "opened", label: "已开通" }
 ];
 
 const intentFilters = ["全部意向", "未判断", "低意向", "中意向", "高意向", "已成交", "暂不跟进"];
@@ -63,12 +64,6 @@ const toolNames: Record<string, string> = {
   live: "直播话术",
   package: "团购套餐"
 };
-
-function planLabel(plan?: string) {
-  if (plan === "trial_7") return "7 天体验权限";
-  if (plan === "full_365") return "365 天全功能权限";
-  return "未开通";
-}
 
 function toolLabel(tool?: string | null) {
   return tool ? toolNames[tool] || tool : "未选择";
@@ -89,6 +84,7 @@ function todayString() {
 export default function LeadsPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [contactFilter, setContactFilter] = useState<ContactFilter>("all");
@@ -98,16 +94,21 @@ export default function LeadsPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
+  // 固定筛选 + 每个会员套餐一个筛选项，套餐部分随后端配置自动增减。
+  const filters = useMemo<{ id: Filter; label: string }[]>(
+    () => [...baseFilters, ...plans.map((plan) => ({ id: plan.id, label: plan.admin_button }))],
+    [plans]
+  );
   const activeFilterLabel = filters.find((item) => item.id === filter)?.label || "当前";
   const userByUnionid = useMemo(() => new Map(users.map((user) => [user.unionid, user])), [users]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const urlFilter = params.get("filter") as Filter | null;
+    const urlFilter = params.get("filter");
     const urlIntent = params.get("intent");
     const urlFollowup = params.get("followup") as FollowupFilter | null;
     const urlContact = params.get("contact") as ContactFilter | null;
-    if (urlFilter && filters.some((item) => item.id === urlFilter)) setFilter(urlFilter);
+    if (urlFilter) setFilter(urlFilter);
     if (urlIntent && intentFilters.includes(urlIntent)) setIntentFilter(urlIntent);
     if (urlFollowup && followupFilters.some((item) => item.id === urlFollowup)) setFollowupFilter(urlFollowup);
     if (urlContact === "uncontacted") setContactFilter("uncontacted");
@@ -116,6 +117,7 @@ export default function LeadsPage() {
   const filteredLeads = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
     const today = todayString();
+    const planIds = new Set(plans.map((plan) => plan.id));
     return leads.filter((lead) => {
       const user = userByUnionid.get(lead.unionid);
       const date = leadDate(lead);
@@ -134,13 +136,12 @@ export default function LeadsPage() {
         lead.followup_note,
         lead.next_followup_date,
         toolLabel(user?.locked_tool),
-        planLabel(user?.permission?.plan)
+        planLabel(plans, user?.permission?.plan)
       ].join(" ").toLowerCase();
 
       if (filter === "contacted" && !lead.contacted_at) return false;
       if (filter === "opened" && !lead.opened_at) return false;
-      if (filter === "trial_7" && !(user?.permission?.status === "active" && user.permission.plan === "trial_7")) return false;
-      if (filter === "full_365" && !(user?.permission?.status === "active" && user.permission.plan === "full_365")) return false;
+      if (planIds.has(filter) && !(user?.permission?.status === "active" && user.permission.plan === filter)) return false;
       if (contactFilter === "uncontacted" && lead.contacted_at) return false;
       if (intentFilter !== "全部意向" && leadIntent !== intentFilter) return false;
       if (followupFilter === "due" && !(lead.next_followup_date && lead.next_followup_date <= today)) return false;
@@ -151,14 +152,14 @@ export default function LeadsPage() {
       if (normalizedKeyword && !searchable.includes(normalizedKeyword)) return false;
       return true;
     });
-  }, [contactFilter, endDate, filter, followupFilter, intentFilter, keyword, leads, startDate, userByUnionid]);
+  }, [contactFilter, endDate, filter, followupFilter, intentFilter, keyword, leads, plans, startDate, userByUnionid]);
 
   async function refresh() {
     setLoading(true);
     try {
       const [leadRes, userRes] = await Promise.all([
-        fetch(`${API}/api/v1/wechat-mp/admin/leads`, { cache: "no-store" }),
-        fetch(`${API}/api/v1/wechat-mp/admin/users`, { cache: "no-store" })
+        fetch(`${ADMIN_API}/leads`, { cache: "no-store" }),
+        fetch(`${ADMIN_API}/users`, { cache: "no-store" })
       ]);
       setLeads((await leadRes.json()).items || []);
       setUsers((await userRes.json()).items || []);
@@ -168,7 +169,7 @@ export default function LeadsPage() {
   }
 
   async function markLead(leadId: string, action: "contacted" | "opened") {
-    await fetch(`${API}/api/v1/wechat-mp/admin/leads/${leadId}`, {
+    await fetch(`${ADMIN_API}/leads/${leadId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action })
@@ -176,8 +177,8 @@ export default function LeadsPage() {
     refresh();
   }
 
-  async function grant(unionid: string, plan: "trial_7" | "full_365") {
-    await fetch(`${API}/api/v1/wechat-mp/admin/permissions`, {
+  async function grant(unionid: string, plan: string) {
+    await fetch(`${ADMIN_API}/permissions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ unionid, plan })
@@ -218,13 +219,13 @@ export default function LeadsPage() {
           lead.next_followup_date || "",
           lead.followup_note || "",
           toolLabel(user?.locked_tool),
-          permission?.status === "active" ? planLabel(permission.plan) : "未开通",
+          permission?.status === "active" ? planLabel(plans, permission.plan) : "未开通",
           permission?.expires_at || ""
         ];
       })
     ];
     const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
-    const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob(["﻿", csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -235,6 +236,7 @@ export default function LeadsPage() {
 
   useEffect(() => {
     refresh();
+    fetchPlans().then(setPlans);
   }, []);
 
   return (
@@ -311,7 +313,7 @@ export default function LeadsPage() {
                       <span className={`pill ${lead.opened_at ? "ok" : ""}`}>{lead.opened_at ? "已开通" : "未开通"}</span>
                       <span className={`pill intent-pill ${intentClassName(lead.intent_level)}`}>{lead.intent_level || "未判断"}</span>
                       <span className="pill">{toolLabel(user?.locked_tool)}</span>
-                      <span className="pill">{permission?.status === "active" ? planLabel(permission.plan) : "无权限"}</span>
+                      <span className="pill">{permission?.status === "active" ? planLabel(plans, permission.plan) : "无权限"}</span>
                     </p>
                     {lead.next_followup_date ? <p>下次回访：{lead.next_followup_date}</p> : null}
                     {lead.followup_note ? <p className="followup-note">跟进备注：{lead.followup_note}</p> : null}
@@ -320,8 +322,15 @@ export default function LeadsPage() {
                     <Link className="btn secondary" href={`/leads/${encodeURIComponent(lead.unionid)}`}>查看详情</Link>
                     <button className="btn" onClick={() => markLead(lead.id, "contacted")}>标记已联系</button>
                     <button className="btn secondary" onClick={() => markLead(lead.id, "opened")}>标记已开通</button>
-                    <button className="btn" onClick={() => grant(lead.unionid, "trial_7")}>开通 7 天</button>
-                    <button className="btn secondary" onClick={() => grant(lead.unionid, "full_365")}>开通 365 天</button>
+                    {plans.map((plan, index) => (
+                      <button
+                        key={plan.id}
+                        className={index === 0 ? "btn" : "btn secondary"}
+                        onClick={() => grant(lead.unionid, plan.id)}
+                      >
+                        {plan.admin_button}
+                      </button>
+                    ))}
                   </div>
                 </div>
               );
@@ -345,7 +354,7 @@ export default function LeadsPage() {
                 <div>{user.unionid}</div>
                 <div>{toolLabel(user.locked_tool)}</div>
                 <div>{user.tool_trial_count}/3</div>
-                <div>{user.permission?.status === "active" ? `${planLabel(user.permission.plan)}，到期 ${user.permission.expires_at}` : "未开通"}</div>
+                <div>{user.permission?.status === "active" ? `${planLabel(plans, user.permission.plan)}，到期 ${user.permission.expires_at}` : "未开通"}</div>
               </Fragment>
             ))}
           </div>

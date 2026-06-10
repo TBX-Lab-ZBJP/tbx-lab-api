@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { intentClassName } from "../../lib/intent";
+import { Plan, fetchPlans, planLabel } from "../../lib/plans";
 
-const API = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+const ADMIN_API = "/api/admin";
 
 type Lead = {
   id: string;
@@ -51,12 +52,6 @@ const noteTemplates = [
   "客户已成交，需确认权限开通和首次使用情况。"
 ];
 
-function planLabel(plan?: string) {
-  if (plan === "trial_7") return "7 天体验权限";
-  if (plan === "full_365") return "365 天全功能权限";
-  return "未开通";
-}
-
 function toolLabel(tool?: string | null) {
   const labels: Record<string, string> = {
     redline: "违禁词话术",
@@ -83,11 +78,11 @@ function followupAdvice(intent: string) {
   return "建议先完成第一次联系，再判断客户意向等级。";
 }
 
-function buildFollowupScript(lead: Lead, intent: string, user: User | null) {
+function buildFollowupScript(lead: Lead, intent: string, user: User | null, plans: Plan[]) {
   const shop = lead.shop || "您的门店";
   const product = lead.product || "本地生活智能员工";
   const permissionText = user?.permission?.status === "active"
-    ? `您现在已经开通了${planLabel(user.permission.plan)}，我这边可以帮您确认一下怎么用更顺手。`
+    ? `您现在已经开通了${planLabel(plans, user.permission.plan)}，我这边可以帮您确认一下怎么用更顺手。`
     : "您这边如果想继续完整使用，我可以帮您登记并安排开通。";
 
   if (intent === "高意向") {
@@ -113,6 +108,7 @@ export default function LeadDetailPage({ params }: { params: { unionid: string }
   const [user, setUser] = useState<User | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -123,7 +119,7 @@ export default function LeadDetailPage({ params }: { params: { unionid: string }
   async function refresh() {
     setLoading(true);
     try {
-      const response = await fetch(`${API}/api/v1/wechat-mp/admin/users/${encodeURIComponent(unionid)}/activity`, {
+      const response = await fetch(`${ADMIN_API}/users/${encodeURIComponent(unionid)}/activity`, {
         cache: "no-store"
       });
       const data = await response.json();
@@ -142,7 +138,7 @@ export default function LeadDetailPage({ params }: { params: { unionid: string }
   }
 
   async function markLead(leadId: string, action: "contacted" | "opened") {
-    await fetch(`${API}/api/v1/wechat-mp/admin/leads/${leadId}`, {
+    await fetch(`${ADMIN_API}/leads/${leadId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action })
@@ -150,8 +146,8 @@ export default function LeadDetailPage({ params }: { params: { unionid: string }
     refresh();
   }
 
-  async function grant(plan: "trial_7" | "full_365") {
-    await fetch(`${API}/api/v1/wechat-mp/admin/permissions`, {
+  async function grant(plan: string) {
+    await fetch(`${ADMIN_API}/permissions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ unionid, plan })
@@ -162,7 +158,7 @@ export default function LeadDetailPage({ params }: { params: { unionid: string }
   async function saveFollowup(leadId: string) {
     setSaving(true);
     try {
-      await fetch(`${API}/api/v1/wechat-mp/admin/leads/${leadId}`, {
+      await fetch(`${ADMIN_API}/leads/${leadId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -189,12 +185,13 @@ export default function LeadDetailPage({ params }: { params: { unionid: string }
 
   useEffect(() => {
     refresh();
+    fetchPlans().then(setPlans);
   }, []);
 
   const latestLead = leads[0];
   const followupScript = useMemo(() => {
-    return latestLead ? buildFollowupScript(latestLead, intentLevel, user) : "";
-  }, [intentLevel, latestLead, user]);
+    return latestLead ? buildFollowupScript(latestLead, intentLevel, user, plans) : "";
+  }, [intentLevel, latestLead, user, plans]);
 
   return (
     <>
@@ -240,7 +237,7 @@ export default function LeadDetailPage({ params }: { params: { unionid: string }
               <p>功能试用：{user.tool_trial_count}/3，剩余 {user.tool_trials_remaining} 次</p>
               <p>短视频复盘：{user.review_used.video ? "已使用" : "未使用"}</p>
               <p>直播复盘：{user.review_used.live ? "已使用" : "未使用"}</p>
-              <p>权限：{user.permission?.status === "active" ? `${planLabel(user.permission.plan)}，到期 ${user.permission.expires_at}` : "未开通"}</p>
+              <p>权限：{user.permission?.status === "active" ? `${planLabel(plans, user.permission.plan)}，到期 ${user.permission.expires_at}` : "未开通"}</p>
             </>
           ) : (
             <p className="muted">加载中。</p>
@@ -255,8 +252,15 @@ export default function LeadDetailPage({ params }: { params: { unionid: string }
           <div className="quick-actions">
             <button className="btn" onClick={() => markLead(latestLead.id, "contacted")}>标记已联系</button>
             <button className="btn secondary" onClick={() => markLead(latestLead.id, "opened")}>标记已开通</button>
-            <button className="btn" onClick={() => grant("trial_7")}>开通 7 天</button>
-            <button className="btn secondary" onClick={() => grant("full_365")}>开通 365 天</button>
+            {plans.map((plan, index) => (
+              <button
+                key={plan.id}
+                className={index === 0 ? "btn" : "btn secondary"}
+                onClick={() => grant(plan.id)}
+              >
+                {plan.admin_button}
+              </button>
+            ))}
           </div>
         </section>
       )}

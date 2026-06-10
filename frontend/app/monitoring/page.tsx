@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, BarChart3, CalendarClock, Clock, Flame, PhoneCall, UserCheck, Users } from "lucide-react";
 import { intentClassName } from "../lib/intent";
 
-const API = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+const ADMIN_API = "/api/admin";
 
 type LeadBrief = {
   id: string;
@@ -25,8 +25,6 @@ type Stats = {
     total_leads: number;
     contacted: number;
     opened: number;
-    trial_7: number;
-    full_365: number;
     pending: number;
     contact_rate: number;
     open_rate: number;
@@ -34,6 +32,7 @@ type Stats = {
     live_reviews: number;
   };
   tool_usage: { id: string; name: string; count: number }[];
+  plan_counts?: { id: string; label: string; count: number }[];
   pending_leads: LeadBrief[];
   followup_leads?: LeadBrief[];
   high_intent_leads?: LeadBrief[];
@@ -46,8 +45,6 @@ const emptyStats: Stats = {
     total_leads: 0,
     contacted: 0,
     opened: 0,
-    trial_7: 0,
-    full_365: 0,
     pending: 0,
     contact_rate: 0,
     open_rate: 0,
@@ -55,6 +52,7 @@ const emptyStats: Stats = {
     live_reviews: 0
   },
   tool_usage: [],
+  plan_counts: [],
   pending_leads: [],
   followup_leads: [],
   high_intent_leads: [],
@@ -68,7 +66,7 @@ export default function MonitoringPage() {
   async function refresh() {
     setLoading(true);
     try {
-      const response = await fetch(`${API}/api/v1/wechat-mp/admin/stats`, { cache: "no-store" });
+      const response = await fetch(`${ADMIN_API}/stats`, { cache: "no-store" });
       setStats(await response.json());
     } finally {
       setLoading(false);
@@ -129,8 +127,9 @@ export default function MonitoringPage() {
           <Progress label="联系率" value={summary.contact_rate} />
           <Progress label="开通率" value={summary.open_rate} />
           <div className="mini-grid">
-            <div><strong>{summary.trial_7}</strong><span>7 天权限</span></div>
-            <div><strong>{summary.full_365}</strong><span>365 天权限</span></div>
+            {(stats.plan_counts || []).map((plan) => (
+              <div key={plan.id}><strong>{plan.count}</strong><span>{plan.label}</span></div>
+            ))}
             <div><strong>{mostUsedTool?.count || 0}</strong><span>最高功能试用</span></div>
           </div>
         </div>

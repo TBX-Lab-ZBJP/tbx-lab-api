@@ -10,7 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from app.services.llm import generate_text
 from app.services.prompt_loader import knowledge_context, read_text
 
@@ -27,11 +27,60 @@ TOOL_IDS = {tool["id"] for tool in TOOLS}
 MAX_LOCKED_TOOL_TRIALS = 3
 REVIEW_TYPES = {"video": "短视频复盘", "live": "直播复盘"}
 
+# ============================================================
+# 会员套餐配置
+# ------------------------------------------------------------
+# 以后新增 / 调整套餐，只改这一个列表即可：
+#   - 员工后台的「开通按钮」「客户筛选」「套餐统计」会自动跟着变；
+#   - 小程序升级页只展示 show_in_miniapp=True 的套餐，并按价格从高到低排列。
+# 字段说明：
+#   id              套餐唯一标识。一旦上线产生数据就不要再改
+#                   （trial_7 / full_365 已有历史数据，必须保留）。
+#   days            该套餐授予的权限有效天数。
+#   label           后台 / 详情页显示的权限名称。
+#   admin_button    员工后台「开通」按钮上的文案，也用作客户筛选项文案。
+#   summary_label   数据统计页里这一档套餐的人数标签。
+#   price           价格，仅用于排序与展示，0 表示赠送。
+#   upgrade_label   小程序升级页展示的套餐文案。
+#   show_in_miniapp 是否在小程序升级页对客户展示。
+#
+# 举例：以后要加「1 个月」套餐，在列表里追加一项即可，无需改其它代码：
+#   {"id": "month_30", "days": 30, "label": "30 天权限",
+#    "admin_button": "开通 30 天", "summary_label": "30 天权限",
+#    "price": 299, "upgrade_label": "¥299 全功能使用权（30天）",
+#    "show_in_miniapp": True}
+# ============================================================
+PLANS: list[dict[str, Any]] = [
+    {
+        "id": "trial_7",
+        "days": 7,
+        "label": "7 天体验权限",
+        "admin_button": "开通 7 天",
+        "summary_label": "7 天权限",
+        "price": 99,
+        "upgrade_label": "¥99 线下干货体验课+全功能使用权（7天）",
+        "show_in_miniapp": True,
+    },
+    {
+        "id": "full_365",
+        "days": 365,
+        "label": "365 天全功能权限",
+        "admin_button": "开通 365 天",
+        "summary_label": "365 天权限",
+        "price": 999,
+        "upgrade_label": "¥999 全功能使用权（365天）",
+        "show_in_miniapp": True,
+    },
+]
+PLAN_BY_ID: dict[str, dict[str, Any]] = {plan["id"]: plan for plan in PLANS}
+DEFAULT_PLAN_ID = "full_365"
+
 DEFAULT_DB = Path(__file__).resolve().parents[2] / "data" / "mp_mvp.sqlite3"
 DB_PATH = Path(os.getenv("MP_DB_PATH", str(DEFAULT_DB)))
 WECHAT_APPID = os.getenv("WECHAT_APPID") or os.getenv("WECHAT_APP_ID", "")
 WECHAT_APPSECRET = os.getenv("WECHAT_APPSECRET") or os.getenv("WECHAT_APP_SECRET", "")
 DEMO_OPEN_TRIALS = os.getenv("MP_DEMO_OPEN_TRIALS", "0") == "1"
+ADMIN_API_TOKEN = os.getenv("ADMIN_API_TOKEN", "")
 
 
 def now_iso() -> str:
@@ -107,6 +156,11 @@ def init_db() -> None:
         ensure_column(db, "mp_leads", "intent_level", "TEXT")
         ensure_column(db, "mp_leads", "followup_note", "TEXT")
         ensure_column(db, "mp_leads", "next_followup_date", "TEXT")
+
+
+def require_admin_token(x_admin_token: str = Header(default="")) -> None:
+    if ADMIN_API_TOKEN and x_admin_token != ADMIN_API_TOKEN:
+        raise HTTPException(status_code=401, detail="admin_auth_required")
 
 
 def lead_status(contacted_at: str | None, opened_at: str | None) -> str:
@@ -363,7 +417,7 @@ def run_trial(tool_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     user_text = payload.get("text", "")
     fallback_output = build_tool_output(tool_id, user_text)
     output = fallback_output
-    if os.getenv("OPENAI_API_KEY", ""):
+    if os.getenv("HUNYUAN_API_KEY", "") or os.getenv("OPENAI_API_KEY", ""):
         prompt = build_tool_prompt(tool_id)
         output = asyncio.run(
             generate_text(
@@ -380,7 +434,37 @@ def run_trial(tool_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         f"第 {user['tool_trial_count']} 次试用，剩余 {max(0, MAX_LOCKED_TOOL_TRIALS - user['tool_trial_count'])} 次。",
         {"tool_id": tool_id, "input": user_text, "output": output[:500]},
     )
-    return {"ok": True, "tool_id": tool_id, "tool_name": tool["name"], "output": output, "upgrade_options": upgrade_options(), "user": public_user(user)}
+    return {
+        "ok": True,
+        "tool_id": tool_id,
+        "tool_name": tool["name"],
+        "output": output,
+        "highlights": build_redline_highlights(output) if tool_id == "redline" else [],
+        "upgrade_options": upgrade_options(),
+        "user": public_user(user),
+    }
+
+
+def build_redline_highlights(text: str) -> list[dict[str, Any]]:
+    risk_terms = [
+        "官方服务商",
+        "官方营销服务商",
+        "公司全称",
+        "保证成交",
+        "保证GMV",
+        "保证ROI",
+        "全网最低",
+        "最低价",
+        "一定爆单",
+        "加我微信",
+    ]
+    highlights: list[dict[str, Any]] = []
+    for term in risk_terms:
+        start = text.find(term)
+        while start >= 0:
+            highlights.append({"start": start, "end": start + len(term), "reason": "风险表达"})
+            start = text.find(term, start + len(term))
+    return sorted(highlights, key=lambda item: item["start"])
 
 
 @router.post("/reviews/{review_type}")
@@ -453,14 +537,14 @@ def create_lead(payload: dict[str, Any]) -> dict[str, Any]:
     return {"status": "received", "next_step": "员工会在员工线索台看到这条信息，然后通过企微或电话 1V1 人工跟进。", "lead": lead}
 
 
-@router.get("/admin/leads")
+@router.get("/admin/leads", dependencies=[Depends(require_admin_token)])
 def admin_leads() -> dict[str, Any]:
     with conn() as db:
         rows = db.execute("SELECT * FROM mp_leads ORDER BY created_at DESC").fetchall()
     return {"items": [row_to_lead(row) for row in rows]}
 
 
-@router.patch("/admin/leads/{lead_id}")
+@router.patch("/admin/leads/{lead_id}", dependencies=[Depends(require_admin_token)])
 def update_lead(lead_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     with conn() as db:
         row = db.execute("SELECT * FROM mp_leads WHERE id = ?", (lead_id,)).fetchone()
@@ -499,11 +583,20 @@ def update_lead(lead_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "lead": row_to_lead(updated)}
 
 
-@router.post("/admin/permissions")
+@router.get("/admin/plans", dependencies=[Depends(require_admin_token)])
+def admin_plans() -> dict[str, Any]:
+    """会员套餐列表，供员工后台动态渲染开通按钮、筛选与统计。"""
+    return {"items": PLANS}
+
+
+@router.post("/admin/permissions", dependencies=[Depends(require_admin_token)])
 def grant_permission(payload: dict[str, Any]) -> dict[str, Any]:
     user = get_user(payload.get("unionid", ""))
-    plan = payload.get("plan", "full_365")
-    days = 7 if plan == "trial_7" else 365
+    plan = payload.get("plan", DEFAULT_PLAN_ID)
+    plan_cfg = PLAN_BY_ID.get(plan)
+    if not plan_cfg:
+        raise HTTPException(status_code=404, detail="unknown_plan")
+    days = int(plan_cfg["days"])
     user["permission"] = {"plan": plan, "status": "active", "expires_at": (datetime.now() + timedelta(days=days)).date().isoformat()}
     save_user(user)
     with conn() as db:
@@ -523,21 +616,21 @@ def grant_permission(payload: dict[str, Any]) -> dict[str, Any]:
     record_activity(
         user["unionid"],
         "permission",
-        f"员工开通权限：{'7 天体验权限' if plan == 'trial_7' else '365 天全功能权限'}",
+        f"员工开通权限：{plan_cfg['label']}",
         f"权限到期时间：{user['permission']['expires_at']}",
         {"plan": plan, "expires_at": user["permission"]["expires_at"]},
     )
     return {"ok": True, "user": public_user(user)}
 
 
-@router.get("/admin/users")
+@router.get("/admin/users", dependencies=[Depends(require_admin_token)])
 def admin_users() -> dict[str, Any]:
     with conn() as db:
         rows = db.execute("SELECT * FROM mp_users ORDER BY updated_at DESC").fetchall()
     return {"items": [public_user(row_to_user(row)) for row in rows]}
 
 
-@router.get("/admin/stats")
+@router.get("/admin/stats", dependencies=[Depends(require_admin_token)])
 def admin_stats() -> dict[str, Any]:
     today = datetime.now().date().isoformat()
     with conn() as db:
@@ -551,8 +644,11 @@ def admin_stats() -> dict[str, Any]:
     contacted = sum(1 for item in leads if item.get("contacted_at"))
     opened = sum(1 for item in leads if item.get("opened_at"))
     pending = sum(1 for item in leads if not item.get("contacted_at"))
-    trial_7 = sum(1 for user in users if user.get("permission", {}).get("status") == "active" and user.get("permission", {}).get("plan") == "trial_7")
-    full_365 = sum(1 for user in users if user.get("permission", {}).get("status") == "active" and user.get("permission", {}).get("plan") == "full_365")
+    plan_counts = {plan["id"]: 0 for plan in PLANS}
+    for user in users:
+        permission = user.get("permission") or {}
+        if permission.get("status") == "active" and permission.get("plan") in plan_counts:
+            plan_counts[permission["plan"]] += 1
     tool_usage = {tool["id"]: 0 for tool in TOOLS}
     for user in users:
         locked_tool = user.get("locked_tool")
@@ -564,8 +660,6 @@ def admin_stats() -> dict[str, Any]:
             "total_leads": total_leads,
             "contacted": contacted,
             "opened": opened,
-            "trial_7": trial_7,
-            "full_365": full_365,
             "pending": pending,
             "contact_rate": round((contacted / total_leads) * 100, 1) if total_leads else 0,
             "open_rate": round((opened / total_leads) * 100, 1) if total_leads else 0,
@@ -573,6 +667,10 @@ def admin_stats() -> dict[str, Any]:
             "live_reviews": sum(1 for user in users if user.get("review_used", {}).get("live")),
         },
         "tool_usage": [{"id": tool["id"], "name": tool["name"], "count": tool_usage.get(tool["id"], 0)} for tool in TOOLS],
+        "plan_counts": [
+            {"id": plan["id"], "label": plan["summary_label"], "count": plan_counts[plan["id"]]}
+            for plan in PLANS
+        ],
         "pending_leads": [item for item in leads if not item.get("contacted_at")][:10],
         "followup_leads": [
             item
@@ -588,7 +686,7 @@ def admin_stats() -> dict[str, Any]:
     }
 
 
-@router.get("/admin/users/{unionid}/activity")
+@router.get("/admin/users/{unionid}/activity", dependencies=[Depends(require_admin_token)])
 def admin_user_activity(unionid: str) -> dict[str, Any]:
     user = get_user(unionid)
     with conn() as db:
@@ -616,9 +714,15 @@ def has_active_permission(user: dict[str, Any]) -> bool:
 
 
 def upgrade_options() -> list[dict[str, Any]]:
+    # 从 PLANS 派生：只展示对客户开放的套餐，按价格从高到低（高价锚点在前）。
+    visible = sorted(
+        (plan for plan in PLANS if plan.get("show_in_miniapp", True)),
+        key=lambda plan: plan.get("price", 0),
+        reverse=True,
+    )
     return [
-        {"label": "¥999 全功能使用权（365天）", "plan": "full_365", "enabled_in_v1": True},
-        {"label": "¥99 线下干货体验课+全功能使用权（7天）", "plan": "trial_7", "enabled_in_v1": True},
+        {"label": plan["upgrade_label"], "plan": plan["id"], "enabled_in_v1": True}
+        for plan in visible
     ]
 
 
@@ -1033,9 +1137,9 @@ def build_live_review(payload: dict[str, Any]) -> str:
         f"客单价估算：{avg_order if avg_order else '待补充'}\n"
         f"核销 / 到店 / 留资：{verify_count}\n\n"
         "三、五步漏斗判断\n"
-        "1. 流量进入：看累计观看和最高在线，判断直播间是否有足够进房。\n"
-        "2. 停留承接：看平均停留，如果停留短，优先改开场和每轮留人话术。\n"
-        "3. 互动信号：看评论、点赞、新增粉丝，如果互动弱，说明主播没有持续抛问题、接评论。\n"
+        f"1. 流量进入：看累计观看和最高在线，判断直播间是否有足够进房。\n"
+        f"2. 停留承接：看平均停留，如果停留短，优先改开场和每轮留人话术。\n"
+        f"3. 互动信号：看评论、点赞、新增粉丝，如果互动弱，说明主播没有持续抛问题、接评论。\n"
         f"4. 商品点击：商品点击率约 {click_rate}%。如果低于 3%，优先改讲品顺序、福利表达和商品入口提醒。\n"
         f"5. 成交承接：点击成交率约 {order_rate}%。如果低于 8%，优先改套餐权益、价格对比、限时理由和核销规则。\n\n"
         "四、下一场直播优先改法\n"
