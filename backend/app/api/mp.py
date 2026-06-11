@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -25,6 +26,8 @@ TOOLS = [
 ]
 TOOL_IDS = {tool["id"] for tool in TOOLS}
 MAX_LOCKED_TOOL_TRIALS = 3
+DAILY_PERMISSION_LIMIT = 3
+LOCAL_TZ = ZoneInfo("Asia/Shanghai")
 REVIEW_TYPES = {"video": "短视频复盘", "live": "直播复盘"}
 
 # ============================================================
@@ -147,6 +150,15 @@ def init_db() -> None:
               payload TEXT NOT NULL DEFAULT '{}',
               created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS mp_daily_usage (
+              unionid TEXT NOT NULL,
+              feature TEXT NOT NULL,
+              usage_date TEXT NOT NULL,
+              count INTEGER NOT NULL DEFAULT 0,
+              updated_at TEXT NOT NULL,
+              PRIMARY KEY (unionid, feature, usage_date)
+            );
             """
         )
         ensure_column(db, "mp_leads", "contacted_at", "TEXT")
@@ -161,6 +173,66 @@ def init_db() -> None:
 def require_admin_token(x_admin_token: str = Header(default="")) -> None:
     if ADMIN_API_TOKEN and x_admin_token != ADMIN_API_TOKEN:
         raise HTTPException(status_code=401, detail="admin_auth_required")
+
+
+def today_key() -> str:
+    return datetime.now(LOCAL_TZ).date().isoformat()
+
+
+def feature_key(kind: str, item_id: str) -> str:
+    return f"{kind}:{item_id}"
+
+
+def daily_usage_counts(unionid: str, date_key: str | None = None) -> dict[str, int]:
+    date_key = date_key or today_key()
+    with conn() as db:
+        rows = db.execute(
+            "SELECT feature, count FROM mp_daily_usage WHERE unionid = ? AND usage_date = ?",
+            (unionid, date_key),
+        ).fetchall()
+    return {row["feature"]: int(row["count"] or 0) for row in rows}
+
+
+def daily_remaining(user: dict[str, Any], kind: str, item_id: str) -> int:
+    if not has_active_permission(user):
+        return DAILY_PERMISSION_LIMIT
+    used = daily_usage_counts(user["unionid"]).get(feature_key(kind, item_id), 0)
+    return max(0, DAILY_PERMISSION_LIMIT - used)
+
+
+def consume_daily_permission_quota(user: dict[str, Any], kind: str, item_id: str) -> dict[str, Any] | None:
+    if not has_active_permission(user):
+        return None
+    key = feature_key(kind, item_id)
+    date_key = today_key()
+    with conn() as db:
+        row = db.execute(
+            "SELECT count FROM mp_daily_usage WHERE unionid = ? AND feature = ? AND usage_date = ?",
+            (user["unionid"], key, date_key),
+        ).fetchone()
+        used = int(row["count"] or 0) if row else 0
+        if used >= DAILY_PERMISSION_LIMIT:
+            return {
+                "ok": False,
+                "error": "daily_limit_used",
+                "message": "今天该功能的 3 次使用次数已经用完，明天 0 点后会自动恢复。",
+                "daily_limit": DAILY_PERMISSION_LIMIT,
+                "daily_remaining": 0,
+                "reset_at": "00:00",
+                "user": public_user(user),
+            }
+        new_count = used + 1
+        db.execute(
+            """
+            INSERT INTO mp_daily_usage (unionid, feature, usage_date, count, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(unionid, feature, usage_date) DO UPDATE SET
+              count = excluded.count,
+              updated_at = excluded.updated_at
+            """,
+            (user["unionid"], key, date_key, new_count, now_iso()),
+        )
+    return None
 
 
 def lead_status(contacted_at: str | None, opened_at: str | None) -> str:
@@ -364,6 +436,8 @@ def select_tool(payload: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="unknown_tool")
     if DEMO_OPEN_TRIALS:
         return {"ok": True, "user": public_user(user), "demo_open_trials": True}
+    if has_active_permission(user):
+        return {"ok": True, "user": public_user(user)}
     if user["locked_tool"] and user["locked_tool"] != tool_id:
         return {"ok": False, "error": "tool_locked", "locked_tool": user["locked_tool"], "message": "您已选择一个免费试用功能，其他功能暂不可试用。"}
     user["locked_tool"] = tool_id
@@ -375,25 +449,45 @@ def select_tool(payload: dict[str, Any]) -> dict[str, Any]:
 def quota(unionid: str) -> dict[str, Any]:
     user = get_user(unionid)
     locked = user["locked_tool"]
+    active_permission = has_active_permission(user)
+    usage = daily_usage_counts(user["unionid"]) if active_permission else {}
     return {
-        "locked_tool": None if DEMO_OPEN_TRIALS else locked,
+        "locked_tool": None if (DEMO_OPEN_TRIALS or active_permission) else locked,
         "tool_trial_count": user["tool_trial_count"],
         "tool_trials_remaining": MAX_LOCKED_TOOL_TRIALS
-        if DEMO_OPEN_TRIALS
+        if (DEMO_OPEN_TRIALS or active_permission)
         else (max(0, MAX_LOCKED_TOOL_TRIALS - user["tool_trial_count"]) if locked else MAX_LOCKED_TOOL_TRIALS),
+        "daily_limit": DAILY_PERMISSION_LIMIT if active_permission else None,
+        "daily_reset": "00:00" if active_permission else None,
         "tools": [
             {
                 **tool,
-                "available": True if DEMO_OPEN_TRIALS else ((not locked) or locked == tool["id"]),
-                "remaining": MAX_LOCKED_TOOL_TRIALS
-                if DEMO_OPEN_TRIALS
-                else (max(0, MAX_LOCKED_TOOL_TRIALS - user["tool_trial_count"]) if locked == tool["id"] else None),
+                "available": True
+                if (DEMO_OPEN_TRIALS or active_permission)
+                else ((not locked) or locked == tool["id"]),
+                "remaining": (
+                    max(0, DAILY_PERMISSION_LIMIT - usage.get(feature_key("tool", tool["id"]), 0))
+                    if active_permission
+                    else (
+                        MAX_LOCKED_TOOL_TRIALS
+                        if DEMO_OPEN_TRIALS
+                        else (max(0, MAX_LOCKED_TOOL_TRIALS - user["tool_trial_count"]) if locked == tool["id"] else None)
+                    )
+                ),
             }
             for tool in TOOLS
         ],
         "reviews": {
-            "video": {"used": user["review_used"]["video"], "max": 1},
-            "live": {"used": user["review_used"]["live"], "max": 1},
+            "video": {
+                "used": user["review_used"]["video"] if not active_permission else usage.get(feature_key("review", "video"), 0) >= DAILY_PERMISSION_LIMIT,
+                "max": DAILY_PERMISSION_LIMIT if active_permission else 1,
+                "remaining": max(0, DAILY_PERMISSION_LIMIT - usage.get(feature_key("review", "video"), 0)) if active_permission else (0 if user["review_used"]["video"] else 1),
+            },
+            "live": {
+                "used": user["review_used"]["live"] if not active_permission else usage.get(feature_key("review", "live"), 0) >= DAILY_PERMISSION_LIMIT,
+                "max": DAILY_PERMISSION_LIMIT if active_permission else 1,
+                "remaining": max(0, DAILY_PERMISSION_LIMIT - usage.get(feature_key("review", "live"), 0)) if active_permission else (0 if user["review_used"]["live"] else 1),
+            },
         },
         "permission": user["permission"],
     }
@@ -404,13 +498,18 @@ def run_trial(tool_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     if tool_id not in TOOL_IDS:
         raise HTTPException(status_code=404, detail="unknown_tool")
     user = get_user(payload.get("unionid", ""))
-    if (not DEMO_OPEN_TRIALS) and user["locked_tool"] and user["locked_tool"] != tool_id:
+    active_permission = has_active_permission(user)
+    if active_permission:
+        quota_error = consume_daily_permission_quota(user, "tool", tool_id)
+        if quota_error:
+            return quota_error
+    if (not DEMO_OPEN_TRIALS) and (not active_permission) and user["locked_tool"] and user["locked_tool"] != tool_id:
         return {"ok": False, "error": "tool_locked", "message": "您已选择一个免费试用功能，其他功能暂不可试用。", "user": public_user(user)}
-    if (not DEMO_OPEN_TRIALS) and not user["locked_tool"]:
+    if (not DEMO_OPEN_TRIALS) and (not active_permission) and not user["locked_tool"]:
         user["locked_tool"] = tool_id
-    if (not DEMO_OPEN_TRIALS) and user["tool_trial_count"] >= MAX_LOCKED_TOOL_TRIALS and not has_active_permission(user):
+    if (not DEMO_OPEN_TRIALS) and user["tool_trial_count"] >= MAX_LOCKED_TOOL_TRIALS and not active_permission:
         return {"ok": False, "error": "trial_used", "message": "该功能的 3 次免费试用已经用完。", "upgrade_options": upgrade_options(), "user": public_user(user)}
-    if (not DEMO_OPEN_TRIALS) and not has_active_permission(user):
+    if (not DEMO_OPEN_TRIALS) and not active_permission:
         user["tool_trial_count"] += 1
     save_user(user)
     tool = next(item for item in TOOLS if item["id"] == tool_id)
@@ -441,6 +540,8 @@ def run_trial(tool_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         "output": output,
         "highlights": build_redline_highlights(output) if tool_id == "redline" else [],
         "upgrade_options": upgrade_options(),
+        "daily_limit": DAILY_PERMISSION_LIMIT if active_permission else None,
+        "daily_remaining": daily_remaining(user, "tool", tool_id) if active_permission else None,
         "user": public_user(user),
     }
 
@@ -472,14 +573,27 @@ def create_review(review_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     if review_type not in REVIEW_TYPES:
         raise HTTPException(status_code=404, detail="unknown_review_type")
     user = get_user(payload.get("unionid", ""))
-    if user["review_used"][review_type] and not has_active_permission(user):
+    active_permission = has_active_permission(user)
+    if active_permission:
+        quota_error = consume_daily_permission_quota(user, "review", review_type)
+        if quota_error:
+            return quota_error
+    if user["review_used"][review_type] and not active_permission:
         return {"ok": False, "error": "review_trial_used", "message": f"{REVIEW_TYPES[review_type]}的 1 次免费试用已经用完。", "upgrade_options": upgrade_options(), "user": public_user(user)}
-    if not has_active_permission(user):
+    if not active_permission:
         user["review_used"][review_type] = True
     save_user(user)
     output = build_live_review(payload) if review_type == "live" else build_video_review(payload)
     record_activity(user["unionid"], "review", f"使用复盘：{REVIEW_TYPES[review_type]}", "已生成复盘建议。", {"review_type": review_type, "input": payload, "output": output[:500]})
-    return {"ok": True, "review_type": review_type, "review_name": REVIEW_TYPES[review_type], "output": output, "user": public_user(user)}
+    return {
+        "ok": True,
+        "review_type": review_type,
+        "review_name": REVIEW_TYPES[review_type],
+        "output": output,
+        "daily_limit": DAILY_PERMISSION_LIMIT if active_permission else None,
+        "daily_remaining": daily_remaining(user, "review", review_type) if active_permission else None,
+        "user": public_user(user),
+    }
 
 
 @router.post("/leads")
@@ -710,7 +824,10 @@ def has_active_permission(user: dict[str, Any]) -> bool:
     expires_at = permission.get("expires_at")
     if not expires_at:
         return False
-    return datetime.fromisoformat(expires_at) >= datetime.now()
+    try:
+        return datetime.fromisoformat(expires_at).date() >= datetime.now(LOCAL_TZ).date()
+    except ValueError:
+        return False
 
 
 def upgrade_options() -> list[dict[str, Any]]:
