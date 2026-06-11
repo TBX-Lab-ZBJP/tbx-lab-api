@@ -551,6 +551,7 @@ def run_trial(tool_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         "daily_remaining": daily_remaining(user, "tool", tool_id) if active_permission else None,
         "ai_source": ai_source,
         "ai_model": ai_model,
+        "ai_error": ai_error,
         "user": public_user(user),
     }
 
@@ -635,6 +636,7 @@ def create_review(review_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         "daily_remaining": daily_remaining(user, "review", review_type) if active_permission else None,
         "ai_source": ai_source,
         "ai_model": ai_model,
+        "ai_error": ai_error,
         "user": public_user(user),
     }
 
@@ -756,6 +758,25 @@ def admin_system() -> dict[str, Any]:
         "llm_model": os.getenv("HUNYUAN_MODEL") or os.getenv("OPENAI_MODEL") or "hunyuan-turbos-latest",
         "hunyuan_configured": bool(os.getenv("HUNYUAN_API_KEY")),
         "openai_configured": bool(os.getenv("OPENAI_API_KEY")),
+    }
+
+
+@router.get("/admin/llm-check", dependencies=[Depends(require_admin_token)])
+def admin_llm_check() -> dict[str, Any]:
+    result = asyncio.run(
+        generate_text_result(
+            "admin_llm_check",
+            "你是连通性检测助手。请只回复 OK。",
+            {"message": "ping"},
+            fallback="FALLBACK",
+        )
+    )
+    return {
+        "ok": result.get("source") != "fallback",
+        "source": result.get("source"),
+        "model": result.get("model"),
+        "text": result.get("text", "")[:80],
+        "error": result.get("error"),
     }
 
 

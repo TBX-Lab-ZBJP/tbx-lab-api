@@ -6,6 +6,13 @@ from collections.abc import AsyncIterator
 import httpx
 
 
+def normalized_base_url() -> str:
+    base_url = os.getenv("HUNYUAN_BASE_URL", "https://api.hunyuan.cloud.tencent.com/v1").rstrip("/")
+    if "hunyuan.cloud.tencent.com" in base_url and not base_url.endswith("/v1"):
+        return f"{base_url}/v1"
+    return base_url
+
+
 async def stream_mock(payload: dict) -> AsyncIterator[str]:
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     for char in text:
@@ -17,7 +24,7 @@ async def generate_json(task: str, prompt: str, user_input: dict) -> dict:
     api_key = os.getenv("HUNYUAN_API_KEY") or os.getenv("OPENAI_API_KEY", "")
     if api_key:
         try:
-            base_url = os.getenv("HUNYUAN_BASE_URL", "https://api.hunyuan.cloud.tencent.com/v1")
+            base_url = normalized_base_url()
             model = os.getenv("HUNYUAN_MODEL") or os.getenv("OPENAI_MODEL", "hunyuan-turbos-latest")
             response = await httpx.AsyncClient(timeout=60).post(
                 f"{base_url.rstrip('/')}/chat/completions",
@@ -30,7 +37,6 @@ async def generate_json(task: str, prompt: str, user_input: dict) -> dict:
                     ],
                     "response_format": {"type": "json_object"},
                     "temperature": 0.4,
-                    "enable_enhancement": True,
                 },
             )
             response.raise_for_status()
@@ -81,7 +87,7 @@ async def generate_text_result(task: str, prompt: str, user_input: dict, fallbac
     if api_key:
         provider = "hunyuan" if os.getenv("HUNYUAN_API_KEY") else "openai"
         try:
-            base_url = os.getenv("HUNYUAN_BASE_URL", "https://api.hunyuan.cloud.tencent.com/v1")
+            base_url = normalized_base_url()
             model = os.getenv("HUNYUAN_MODEL") or os.getenv("OPENAI_MODEL", "hunyuan-turbos-latest")
             async with httpx.AsyncClient(timeout=90) as client:
                 response = await client.post(
@@ -94,7 +100,6 @@ async def generate_text_result(task: str, prompt: str, user_input: dict, fallbac
                             {"role": "user", "content": json.dumps(user_input, ensure_ascii=False)},
                         ],
                         "temperature": 0.55,
-                        "enable_enhancement": True,
                     },
                 )
             response.raise_for_status()
