@@ -344,17 +344,29 @@ export default function LeadsPage() {
         {users.length === 0 ? (
           <p className="muted">暂无授权客户。</p>
         ) : (
-          <div className="table">
+          <div className="table permission-table">
             <div className="table-head">UnionID</div>
             <div className="table-head">锁定功能</div>
             <div className="table-head">试用次数</div>
             <div className="table-head">权限</div>
+            <div className="table-head">操作</div>
             {users.map((user) => (
               <Fragment key={user.unionid}>
                 <div>{user.unionid}</div>
                 <div>{toolLabel(user.locked_tool)}</div>
                 <div>{user.tool_trial_count}/3</div>
                 <div>{user.permission?.status === "active" ? `${planLabel(plans, user.permission.plan)}，到期 ${user.permission.expires_at}` : "未开通"}</div>
+                <div className="table-actions">
+                  {plans.map((plan, index) => (
+                    <button
+                      key={plan.id}
+                      className={index === 0 ? "btn" : "btn secondary"}
+                      onClick={() => grant(user.unionid, plan.id)}
+                    >
+                      {plan.admin_button}
+                    </button>
+                  ))}
+                </div>
               </Fragment>
             ))}
           </div>
