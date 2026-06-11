@@ -6,8 +6,15 @@ from collections.abc import AsyncIterator
 import httpx
 
 
+def clean_env_value(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        value = value[1:-1].strip()
+    return value
+
+
 def normalized_base_url() -> str:
-    base_url = os.getenv("HUNYUAN_BASE_URL", "https://api.hunyuan.cloud.tencent.com/v1").rstrip("/")
+    base_url = (clean_env_value("HUNYUAN_BASE_URL") or "https://api.hunyuan.cloud.tencent.com/v1").rstrip("/")
     if "hunyuan.cloud.tencent.com" in base_url and not base_url.endswith("/v1"):
         return f"{base_url}/v1"
     return base_url
@@ -21,11 +28,11 @@ async def stream_mock(payload: dict) -> AsyncIterator[str]:
 
 
 async def generate_json(task: str, prompt: str, user_input: dict) -> dict:
-    api_key = os.getenv("HUNYUAN_API_KEY") or os.getenv("OPENAI_API_KEY", "")
+    api_key = clean_env_value("HUNYUAN_API_KEY") or clean_env_value("OPENAI_API_KEY")
     if api_key:
         try:
             base_url = normalized_base_url()
-            model = os.getenv("HUNYUAN_MODEL") or os.getenv("OPENAI_MODEL", "hunyuan-turbos-latest")
+            model = clean_env_value("HUNYUAN_MODEL") or clean_env_value("OPENAI_MODEL") or "hunyuan-turbos-latest"
             response = await httpx.AsyncClient(timeout=60).post(
                 f"{base_url.rstrip('/')}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
@@ -83,12 +90,12 @@ async def generate_json(task: str, prompt: str, user_input: dict) -> dict:
 
 
 async def generate_text_result(task: str, prompt: str, user_input: dict, fallback: str = "") -> dict:
-    api_key = os.getenv("HUNYUAN_API_KEY") or os.getenv("OPENAI_API_KEY", "")
+    api_key = clean_env_value("HUNYUAN_API_KEY") or clean_env_value("OPENAI_API_KEY")
     if api_key:
-        provider = "hunyuan" if os.getenv("HUNYUAN_API_KEY") else "openai"
+        provider = "hunyuan" if clean_env_value("HUNYUAN_API_KEY") else "openai"
         try:
             base_url = normalized_base_url()
-            model = os.getenv("HUNYUAN_MODEL") or os.getenv("OPENAI_MODEL", "hunyuan-turbos-latest")
+            model = clean_env_value("HUNYUAN_MODEL") or clean_env_value("OPENAI_MODEL") or "hunyuan-turbos-latest"
             async with httpx.AsyncClient(timeout=90) as client:
                 response = await client.post(
                     f"{base_url.rstrip('/')}/chat/completions",
