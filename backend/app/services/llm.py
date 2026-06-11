@@ -76,9 +76,10 @@ async def generate_json(task: str, prompt: str, user_input: dict) -> dict:
     return {"task": task, "prompt": prompt[:300], "input": user_input}
 
 
-async def generate_text(task: str, prompt: str, user_input: dict, fallback: str = "") -> str:
+async def generate_text_result(task: str, prompt: str, user_input: dict, fallback: str = "") -> dict:
     api_key = os.getenv("HUNYUAN_API_KEY") or os.getenv("OPENAI_API_KEY", "")
     if api_key:
+        provider = "hunyuan" if os.getenv("HUNYUAN_API_KEY") else "openai"
         try:
             base_url = os.getenv("HUNYUAN_BASE_URL", "https://api.hunyuan.cloud.tencent.com/v1")
             model = os.getenv("HUNYUAN_MODEL") or os.getenv("OPENAI_MODEL", "hunyuan-turbos-latest")
@@ -97,7 +98,16 @@ async def generate_text(task: str, prompt: str, user_input: dict, fallback: str 
                     },
                 )
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"].strip()
-        except Exception:
-            pass
-    return fallback
+            return {
+                "text": response.json()["choices"][0]["message"]["content"].strip(),
+                "source": provider,
+                "model": model,
+            }
+        except Exception as exc:
+            return {"text": fallback, "source": "fallback", "error": str(exc)}
+    return {"text": fallback, "source": "fallback", "error": "missing_api_key"}
+
+
+async def generate_text(task: str, prompt: str, user_input: dict, fallback: str = "") -> str:
+    result = await generate_text_result(task, prompt, user_input, fallback)
+    return result["text"]

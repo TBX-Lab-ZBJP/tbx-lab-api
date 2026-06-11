@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException
-from app.services.llm import generate_text
+from app.services.llm import generate_text_result
 from app.services.prompt_loader import knowledge_context, read_text
 
 router = APIRouter(tags=["wechat-mp"])
@@ -516,22 +516,29 @@ def run_trial(tool_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     user_text = payload.get("text", "")
     fallback_output = build_tool_output(tool_id, user_text)
     output = fallback_output
+    ai_source = "fallback"
+    ai_model = None
+    ai_error = None
     if os.getenv("HUNYUAN_API_KEY", "") or os.getenv("OPENAI_API_KEY", ""):
         prompt = build_tool_prompt(tool_id)
-        output = asyncio.run(
-            generate_text(
+        ai_result = asyncio.run(
+            generate_text_result(
                 f"mp_{tool_id}",
                 prompt,
                 {"tool_id": tool_id, "user_input": user_text},
                 fallback=fallback_output,
             )
         )
+        output = ai_result["text"]
+        ai_source = ai_result.get("source", "fallback")
+        ai_model = ai_result.get("model")
+        ai_error = ai_result.get("error")
     record_activity(
         user["unionid"],
         "tool_trial",
         f"试用功能：{tool['name']}",
         f"第 {user['tool_trial_count']} 次试用，剩余 {max(0, MAX_LOCKED_TOOL_TRIALS - user['tool_trial_count'])} 次。",
-        {"tool_id": tool_id, "input": user_text, "output": output[:500]},
+        {"tool_id": tool_id, "input": user_text, "output": output[:500], "ai_source": ai_source, "ai_model": ai_model, "ai_error": ai_error},
     )
     return {
         "ok": True,
@@ -542,6 +549,8 @@ def run_trial(tool_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         "upgrade_options": upgrade_options(),
         "daily_limit": DAILY_PERMISSION_LIMIT if active_permission else None,
         "daily_remaining": daily_remaining(user, "tool", tool_id) if active_permission else None,
+        "ai_source": ai_source,
+        "ai_model": ai_model,
         "user": public_user(user),
     }
 
@@ -568,6 +577,21 @@ def build_redline_highlights(text: str) -> list[dict[str, Any]]:
     return sorted(highlights, key=lambda item: item["start"])
 
 
+def build_review_prompt(review_type: str) -> str:
+    review_name = REVIEW_TYPES.get(review_type, "数据复盘")
+    return f"""
+你是特别想-Lab的本地生活智能运营顾问，正在为商家生成{review_name}。
+
+要求：
+1. 只基于用户填写的数据做经营参考，不承诺效果，不替用户自动发布内容。
+2. 输出中文，结构清晰，适合小程序页面直接展示。
+3. 先给一句总体判断，再给3-5条可执行建议。
+4. 如果数据缺失，明确提示需要补充哪些字段，不要编造具体数据。
+5. 面向抖音、小红书、直播间、团购页等本地生活场景。
+6. 避免使用“保证成交、一定爆单、全网最低”等风险表达。
+""".strip()
+
+
 @router.post("/reviews/{review_type}")
 def create_review(review_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     if review_type not in REVIEW_TYPES:
@@ -583,7 +607,24 @@ def create_review(review_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     if not active_permission:
         user["review_used"][review_type] = True
     save_user(user)
-    output = build_live_review(payload) if review_type == "live" else build_video_review(payload)
+    fallback_output = build_live_review(payload) if review_type == "live" else build_video_review(payload)
+    output = fallback_output
+    ai_source = "fallback"
+    ai_model = None
+    ai_error = None
+    if os.getenv("HUNYUAN_API_KEY", "") or os.getenv("OPENAI_API_KEY", ""):
+        ai_result = asyncio.run(
+            generate_text_result(
+                f"mp_review_{review_type}",
+                build_review_prompt(review_type),
+                {"review_type": review_type, "input": payload},
+                fallback=fallback_output,
+            )
+        )
+        output = ai_result["text"]
+        ai_source = ai_result.get("source", "fallback")
+        ai_model = ai_result.get("model")
+        ai_error = ai_result.get("error")
     record_activity(user["unionid"], "review", f"使用复盘：{REVIEW_TYPES[review_type]}", "已生成复盘建议。", {"review_type": review_type, "input": payload, "output": output[:500]})
     return {
         "ok": True,
@@ -592,6 +633,8 @@ def create_review(review_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         "output": output,
         "daily_limit": DAILY_PERMISSION_LIMIT if active_permission else None,
         "daily_remaining": daily_remaining(user, "review", review_type) if active_permission else None,
+        "ai_source": ai_source,
+        "ai_model": ai_model,
         "user": public_user(user),
     }
 
@@ -701,6 +744,19 @@ def update_lead(lead_id: str, payload: dict[str, Any]) -> dict[str, Any]:
 def admin_plans() -> dict[str, Any]:
     """会员套餐列表，供员工后台动态渲染开通按钮、筛选与统计。"""
     return {"items": PLANS}
+
+
+@router.get("/admin/system", dependencies=[Depends(require_admin_token)])
+def admin_system() -> dict[str, Any]:
+    return {
+        "db_path": str(DB_PATH),
+        "db_parent_exists": DB_PATH.parent.exists(),
+        "db_exists": DB_PATH.exists(),
+        "llm_provider": "hunyuan" if os.getenv("HUNYUAN_API_KEY") else ("openai" if os.getenv("OPENAI_API_KEY") else "fallback"),
+        "llm_model": os.getenv("HUNYUAN_MODEL") or os.getenv("OPENAI_MODEL") or "hunyuan-turbos-latest",
+        "hunyuan_configured": bool(os.getenv("HUNYUAN_API_KEY")),
+        "openai_configured": bool(os.getenv("OPENAI_API_KEY")),
+    }
 
 
 @router.post("/admin/permissions", dependencies=[Depends(require_admin_token)])

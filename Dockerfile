@@ -3,6 +3,9 @@ FROM python:3.12-slim
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV MP_DB_PATH=/data/mp_mvp.sqlite3
+
+RUN mkdir -p /data
 
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
