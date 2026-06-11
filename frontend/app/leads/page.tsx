@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { intentClassName } from "../lib/intent";
 import { Plan, fetchPlans, planLabel } from "../lib/plans";
 
@@ -93,6 +93,7 @@ export default function LeadsPage() {
   const [followupFilter, setFollowupFilter] = useState<FollowupFilter>("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const restoreInputRef = useRef<HTMLInputElement | null>(null);
 
   // 固定筛选 + 每个会员套餐一个筛选项，套餐部分随后端配置自动增减。
   const filters = useMemo<{ id: Filter; label: string }[]>(
@@ -234,6 +235,47 @@ export default function LeadsPage() {
     URL.revokeObjectURL(url);
   }
 
+  async function downloadBackup() {
+    const response = await fetch(`${ADMIN_API}/backup`, { cache: "no-store" });
+    const data = await response.json();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    link.href = url;
+    link.download = `tbx-lab-backup-${stamp}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function chooseRestoreFile() {
+    restoreInputRef.current?.click();
+  }
+
+  async function restoreBackup(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const confirmed = window.confirm("恢复会覆盖当前后台里的客户、权限和使用记录。确定继续吗？");
+    if (!confirmed) {
+      event.target.value = "";
+      return;
+    }
+    const payload = JSON.parse(await file.text());
+    const response = await fetch(`${ADMIN_API}/restore`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      window.alert("恢复失败，请确认备份文件是否正确。");
+      event.target.value = "";
+      return;
+    }
+    window.alert("恢复完成。");
+    event.target.value = "";
+    refresh();
+  }
+
   useEffect(() => {
     refresh();
     fetchPlans().then(setPlans);
@@ -248,6 +290,9 @@ export default function LeadsPage() {
         </div>
         <div className="toolbar">
           <button className="btn secondary" onClick={downloadCsv} disabled={filteredLeads.length === 0}>下载{activeFilterLabel}客资</button>
+          <button className="btn secondary" onClick={downloadBackup}>下载完整备份</button>
+          <button className="btn secondary" onClick={chooseRestoreFile}>上传备份恢复</button>
+          <input ref={restoreInputRef} type="file" accept="application/json,.json" onChange={restoreBackup} style={{ display: "none" }} />
           <button className="btn secondary" onClick={refresh}>{loading ? "刷新中" : "刷新"}</button>
         </div>
       </div>

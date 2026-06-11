@@ -759,6 +759,56 @@ def admin_system() -> dict[str, Any]:
     }
 
 
+BACKUP_TABLES = ("mp_users", "mp_leads", "mp_activity", "mp_daily_usage")
+
+
+def table_rows(db: sqlite3.Connection, table: str) -> list[dict[str, Any]]:
+    return [dict(row) for row in db.execute(f"SELECT * FROM {table}").fetchall()]
+
+
+@router.get("/admin/backup", dependencies=[Depends(require_admin_token)])
+def admin_backup() -> dict[str, Any]:
+    init_db()
+    with conn() as db:
+        tables = {table: table_rows(db, table) for table in BACKUP_TABLES}
+    return {
+        "version": 1,
+        "created_at": now_iso(),
+        "db_path": str(DB_PATH),
+        "tables": tables,
+    }
+
+
+@router.post("/admin/restore", dependencies=[Depends(require_admin_token)])
+def admin_restore(payload: dict[str, Any]) -> dict[str, Any]:
+    tables = payload.get("tables")
+    if not isinstance(tables, dict):
+        raise HTTPException(status_code=400, detail="invalid_backup")
+    init_db()
+    restored: dict[str, int] = {}
+    with conn() as db:
+        for table in BACKUP_TABLES:
+            rows = tables.get(table, [])
+            if not isinstance(rows, list):
+                raise HTTPException(status_code=400, detail=f"invalid_table_{table}")
+            columns = [row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()]
+            db.execute(f"DELETE FROM {table}")
+            for item in rows:
+                if not isinstance(item, dict):
+                    raise HTTPException(status_code=400, detail=f"invalid_row_{table}")
+                values = {column: item.get(column) for column in columns if column in item}
+                if not values:
+                    continue
+                column_names = list(values.keys())
+                placeholders = ", ".join("?" for _ in column_names)
+                db.execute(
+                    f"INSERT INTO {table} ({', '.join(column_names)}) VALUES ({placeholders})",
+                    [values[column] for column in column_names],
+                )
+            restored[table] = len(rows)
+    return {"ok": True, "restored": restored}
+
+
 @router.post("/admin/permissions", dependencies=[Depends(require_admin_token)])
 def grant_permission(payload: dict[str, Any]) -> dict[str, Any]:
     user = get_user(payload.get("unionid", ""))
