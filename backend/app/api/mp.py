@@ -1417,60 +1417,76 @@ def build_live_review(payload: dict[str, Any]) -> str:
 # Final override: standard live dashboard review fields for the customer miniapp.
 def build_live_review(payload: dict[str, Any]) -> str:
     duration = _text(payload, "duration")
-    views = _num(payload, "views")
-    peak_online = _text(payload, "peak_online")
-    avg_stay = _text(payload, "avg_stay") or _text(payload, "avg_watch_seconds")
+    live_exposure = _num(payload, "live_exposure")
+    live_viewers = _num(payload, "live_viewers") or _num(payload, "views")
+    product_exposure = _num(payload, "product_exposure")
+    product_clicks = _num(payload, "product_clicks")
+    buyers = _num(payload, "buyers")
+    orders = _num(payload, "orders")
+    gmv_value = _num(payload, "gmv")
+    gmv = _text(payload, "gmv")
+    avg_order_value = _text(payload, "avg_order_value")
+    avg_watch_time = _text(payload, "avg_watch_time")
+    gmv_per_1k_views = _text(payload, "gmv_per_1k_views")
+    product_click_rate_input = _text(payload, "product_click_rate")
     new_fans = _text(payload, "new_fans")
     comments = _text(payload, "comments")
-    likes = _text(payload, "likes")
-    clicks = _num(payload, "product_clicks")
-    orders = _num(payload, "orders")
-    gmv = _text(payload, "gmv")
-    verify_count = _text(payload, "verify_count")
+    verify_count = _text(payload, "verify_count", "未填写")
     note = _text(payload, "note")
-    click_rate = _rate(clicks, views)
-    order_rate = _rate(orders, clicks)
-    avg_order = round(_num(payload, "gmv") / orders, 2) if orders else 0
 
-    if views <= 0:
-        main_problem = "直播大屏核心数据还不完整，建议先补齐累计观看、商品点击和成交订单，再做判断。"
-    elif click_rate < 3:
-        main_problem = "当前优先问题在“从看直播到点商品”的转化，说明开场留人、讲品顺序或福利钩子不够清楚。"
-    elif order_rate < 8:
-        main_problem = "当前优先问题在“点商品到成交”的承接，说明套餐权益、价格锚点、下单理由或核销说明还不够有力。"
+    exposure_to_view_rate = _rate(live_viewers, live_exposure)
+    product_show_rate = _rate(product_exposure, live_viewers)
+    product_click_rate = product_click_rate_input if product_click_rate_input != "未填写" else f"{_rate(product_clicks, product_exposure)}%"
+    viewer_click_rate = _rate(product_clicks, live_viewers)
+    click_order_rate = _rate(orders, product_clicks)
+    buyer_order_rate = _rate(buyers, live_viewers)
+    avg_order = avg_order_value if avg_order_value != "未填写" else (str(round(gmv_value / orders, 2)) if orders else "未填写")
+    gmv_per_1k = gmv_per_1k_views if gmv_per_1k_views != "未填写" else (str(round(gmv_value / live_viewers * 1000, 2)) if live_viewers else "未填写")
+
+    if live_viewers <= 0:
+        main_problem = "直播看播人数未填写，暂时无法判断流量进入和转化效率。先补齐直播曝光、看播、商品点击和成交数据。"
+    elif product_clicks <= 0 or viewer_click_rate < 3:
+        main_problem = "当前优先问题在商品点击：看播后点商品的人偏少，说明讲品顺序、福利表达或商品入口提醒还不够明确。"
+    elif orders <= 0 or click_order_rate < 8:
+        main_problem = "当前优先问题在成交承接：商品有人点，但下单动力不足，需要加强套餐权益、价格对比、预约/核销规则和限时理由。"
     else:
-        main_problem = "直播间已经有成交链路信号，下一步应复盘高点击、高成交的讲品片段，并把有效话术前置。"
+        main_problem = "直播已经形成成交链路，下一步重点复盘高点击和高成交话术，把有效片段提前到开场和每轮讲品前。"
 
     return (
         "直播大屏复盘报告\n\n"
         "一、核心结论\n"
         f"{main_problem}\n\n"
-        "二、直播大屏关键数据\n"
+        "二、关键数据\n"
         f"直播时长：{duration}\n"
-        f"累计观看人数：{views:g}\n"
-        f"最高在线人数：{peak_online}\n"
-        f"平均停留时长：{avg_stay}\n"
-        f"新增粉丝：{new_fans}\n"
-        f"评论次数：{comments}\n"
-        f"点赞次数：{likes}\n"
-        f"商品点击人数：{clicks:g}\n"
+        f"直播曝光人数：{live_exposure:g}\n"
+        f"直播看播人数：{live_viewers:g}\n"
+        f"曝光进入看播率：{exposure_to_view_rate}%\n"
+        f"商品曝光人数：{product_exposure:g}\n"
+        f"商品点击人数：{product_clicks:g}\n"
+        f"商品曝光点击率：{product_click_rate}\n"
+        f"看播点击率：{viewer_click_rate}%\n"
+        f"成交人数：{buyers:g}\n"
         f"成交订单数：{orders:g}\n"
-        f"成交金额 GMV：{gmv}\n"
-        f"客单价估算：{avg_order if avg_order else '待补充'}\n"
-        f"核销 / 到店 / 留资：{verify_count}\n\n"
+        f"点击成交率：{click_order_rate}%\n"
+        f"看播成交率：{buyer_order_rate}%\n"
+        f"成交GMV：{gmv}\n"
+        f"订单均价：{avg_order}\n"
+        f"人均观看时长：{avg_watch_time}\n"
+        f"千次观看成交金额：{gmv_per_1k}\n"
+        f"新增粉丝数：{new_fans}\n"
+        f"评论次数：{comments}\n"
+        f"核销数量：{verify_count}\n\n"
         "三、五步漏斗判断\n"
-        f"1. 流量进入：看累计观看和最高在线，判断直播间是否有足够进房。\n"
-        f"2. 停留承接：看平均停留，如果停留短，优先改开场和每轮留人话术。\n"
-        f"3. 互动信号：看评论、点赞、新增粉丝，如果互动弱，说明主播没有持续抛问题、接评论。\n"
-        f"4. 商品点击：商品点击率约 {click_rate}%。如果低于 3%，优先改讲品顺序、福利表达和商品入口提醒。\n"
-        f"5. 成交承接：点击成交率约 {order_rate}%。如果低于 8%，优先改套餐权益、价格对比、限时理由和核销规则。\n\n"
-        "四、下一场直播优先改法\n"
-        "1. 开场 30 秒先讲“这场适合谁、今天主推什么、为什么现在值得听”，不要一上来只报价格。\n"
-        "2. 每个商品按“适合场景 - 几人用 - 包含内容 - 原价对比 - 使用规则 - 现在下单理由”讲完整。\n"
-        "3. 每 3-5 分钟重复一次核心套餐和下单路径，照顾新进直播间的人。\n"
-        "4. 评论区集中回答高频问题：几人用、怎么预约、周末能不能用、有没有限制、到店怎么核销。\n"
-        "5. 下一场单独记录每轮讲品后的商品点击变化，找到最能带点击和成交的那段话术。\n\n"
-        "五、员工跟进建议\n"
-        "员工需要让客户补充直播大屏截图、商品点击趋势、成交商品明细和评论区高频问题。不要只看 GMV，要先判断卡在进房、停留、点击、成交还是核销。\n\n"
-        f"六、补充记录\n{note}"
+        "1. 看曝光到看播：如果曝光不少但看播少，优先改封面、标题、开场利益点和进房前3秒。\n"
+        "2. 看播到商品曝光：如果看播有了但商品曝光少，说明商品挂载、弹品频率或讲品节奏不够稳定。\n"
+        "3. 商品曝光到点击：如果商品曝光有但点击少，优先把适合谁、包含什么、价格福利、使用规则讲得更具体。\n"
+        "4. 点击到成交：如果点击有但订单少，重点补顾虑处理：怎么预约、到店怎么核销、节假日能不能用、有没有隐藏限制。\n"
+        "5. 成交到核销：如果成交和核销差距大，下一步要加强下单后提醒、预约路径和客服跟进。\n\n"
+        "四、下一场优先动作\n"
+        "1. 开场30秒先讲适合谁、今天主推什么、为什么现在值得留下。\n"
+        "2. 每轮讲品固定按：场景 - 人群 - 权益 - 价格 - 规则 - 现在下单理由。\n"
+        "3. 每3-5分钟重复一次商品入口和核心福利，照顾新进入直播间的人。\n"
+        "4. 评论区集中回答高频问题，用回答评论带出商品点击提醒。\n"
+        "5. 下一场单独记录每轮讲品后的商品点击变化，找出最能带点击和成交的话术。\n\n"
+        f"五、补充记录\n{note}"
     )
