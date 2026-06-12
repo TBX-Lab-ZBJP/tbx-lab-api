@@ -781,10 +781,57 @@ def admin_llm_check() -> dict[str, Any]:
 
 
 BACKUP_TABLES = ("mp_users", "mp_leads", "mp_activity", "mp_daily_usage")
+RESTORE_DEFAULTS: dict[str, dict[str, Any]] = {
+    "mp_users": {
+        "openid": "",
+        "locked_tool": None,
+        "tool_trial_count": 0,
+        "review_video_used": 0,
+        "review_live_used": 0,
+        "permission_plan": "free",
+        "permission_status": "inactive",
+        "permission_expires_at": None,
+    },
+    "mp_leads": {
+        "product": "联系客服",
+        "name": "未填写",
+        "phone": "未填写",
+        "wechat": "",
+        "staff_wechat": "TBX-Lab",
+        "shop": "未填写",
+        "contact_time": "未填写",
+        "status": "待跟进",
+        "contacted_at": None,
+        "opened_at": None,
+        "intent_level": "未判断",
+        "followup_note": "",
+        "next_followup_date": "",
+        "updated_at": None,
+    },
+    "mp_activity": {"type": "restore", "title": "恢复记录", "summary": "", "payload": "{}"},
+    "mp_daily_usage": {"count": 0},
+}
 
 
 def table_rows(db: sqlite3.Connection, table: str) -> list[dict[str, Any]]:
     return [dict(row) for row in db.execute(f"SELECT * FROM {table}").fetchall()]
+
+
+def restore_values(table: str, columns: list[str], item: dict[str, Any]) -> dict[str, Any]:
+    values = {column: item.get(column) for column in columns if column in item}
+    defaults = RESTORE_DEFAULTS.get(table, {})
+    for column in columns:
+        if column not in values and column in defaults:
+            values[column] = defaults[column]
+    if "created_at" in columns and not values.get("created_at"):
+        values["created_at"] = now_iso()
+    if "updated_at" in columns and not values.get("updated_at"):
+        values["updated_at"] = now_iso()
+    if table == "mp_users" and "openid" in columns and not values.get("openid"):
+        values["openid"] = f"openid_{values.get('unionid') or uuid4().hex[:10]}"
+    if table == "mp_daily_usage" and "updated_at" in columns and not values.get("updated_at"):
+        values["updated_at"] = now_iso()
+    return values
 
 
 @router.get("/admin/backup", dependencies=[Depends(require_admin_token)])
@@ -807,26 +854,34 @@ def admin_restore(payload: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="invalid_backup")
     init_db()
     restored: dict[str, int] = {}
-    with conn() as db:
-        for table in BACKUP_TABLES:
-            rows = tables.get(table, [])
-            if not isinstance(rows, list):
-                raise HTTPException(status_code=400, detail=f"invalid_table_{table}")
-            columns = [row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()]
-            db.execute(f"DELETE FROM {table}")
-            for item in rows:
-                if not isinstance(item, dict):
-                    raise HTTPException(status_code=400, detail=f"invalid_row_{table}")
-                values = {column: item.get(column) for column in columns if column in item}
-                if not values:
-                    continue
-                column_names = list(values.keys())
-                placeholders = ", ".join("?" for _ in column_names)
-                db.execute(
-                    f"INSERT INTO {table} ({', '.join(column_names)}) VALUES ({placeholders})",
-                    [values[column] for column in column_names],
-                )
-            restored[table] = len(rows)
+    try:
+        with conn() as db:
+            for table in BACKUP_TABLES:
+                rows = tables.get(table, [])
+                if not isinstance(rows, list):
+                    raise HTTPException(status_code=400, detail=f"invalid_table_{table}")
+                columns = [row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()]
+                db.execute(f"DELETE FROM {table}")
+                for index, item in enumerate(rows):
+                    if not isinstance(item, dict):
+                        raise HTTPException(status_code=400, detail=f"invalid_row_{table}_{index}")
+                    values = restore_values(table, columns, item)
+                    if not values:
+                        continue
+                    column_names = list(values.keys())
+                    placeholders = ", ".join("?" for _ in column_names)
+                    try:
+                        db.execute(
+                            f"INSERT INTO {table} ({', '.join(column_names)}) VALUES ({placeholders})",
+                            [values[column] for column in column_names],
+                        )
+                    except sqlite3.Error as exc:
+                        raise HTTPException(status_code=400, detail=f"restore_failed_{table}_{index}: {exc}") from exc
+                restored[table] = len(rows)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"restore_failed: {exc}") from exc
     return {"ok": True, "restored": restored}
 
 
