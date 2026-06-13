@@ -955,21 +955,6 @@ def admin_users() -> dict[str, Any]:
     return {"items": items}
 
 
-@router.post("/admin/reset-test-data", dependencies=[Depends(require_admin_token)])
-def admin_reset_test_data(payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    confirm = (payload or {}).get("confirm")
-    if confirm != "RESET_TEST_DATA":
-        raise HTTPException(status_code=400, detail="missing_reset_confirmation")
-    init_db()
-    deleted: dict[str, int] = {}
-    with conn() as db:
-        for table in ("mp_daily_usage", "mp_activity", "mp_leads", "mp_users"):
-            before = db.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"]
-            db.execute(f"DELETE FROM {table}")
-            deleted[table] = int(before)
-    return {"ok": True, "deleted": deleted}
-
-
 @router.get("/admin/stats", dependencies=[Depends(require_admin_token)])
 def admin_stats() -> dict[str, Any]:
     today = datetime.now().date().isoformat()

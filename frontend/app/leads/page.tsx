@@ -284,24 +284,6 @@ export default function LeadsPage() {
     refresh();
   }
 
-  async function clearTestData() {
-    const confirmed = window.confirm("上线前清空会删除当前后台里的测试客户、权限、使用次数和操作记录。请先下载完整备份。确定继续吗？");
-    if (!confirmed) return;
-    const secondConfirmed = window.confirm("再次确认：清空后后台会变成空数据，正式客户需要重新提交。确定清空测试数据？");
-    if (!secondConfirmed) return;
-    const response = await fetch(`${ADMIN_API}/reset-test-data`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ confirm: "RESET_TEST_DATA" })
-    });
-    if (!response.ok) {
-      window.alert("清空失败，请确认后端已经部署最新版。");
-      return;
-    }
-    window.alert("测试数据已清空。");
-    refresh();
-  }
-
   useEffect(() => {
     refresh();
     fetchPlans().then(setPlans);
@@ -319,7 +301,6 @@ export default function LeadsPage() {
           <button className="btn secondary" onClick={downloadBackup}>下载完整备份</button>
           <button className="btn secondary" onClick={chooseRestoreFile}>上传备份恢复</button>
           <input ref={restoreInputRef} type="file" accept="application/json,.json" onChange={restoreBackup} style={{ display: "none" }} />
-          <button className="btn secondary" onClick={clearTestData}>清空测试数据</button>
           <button className="btn secondary" onClick={refresh}>{loading ? "刷新中" : "刷新"}</button>
         </div>
       </div>
