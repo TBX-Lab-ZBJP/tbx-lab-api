@@ -34,6 +34,14 @@ type User = {
   unionid: string;
   locked_tool: string | null;
   tool_trial_count: number;
+  lead_profile?: {
+    name?: string;
+    phone?: string;
+    wechat?: string;
+    shop?: string;
+    product?: string;
+    lead_created_at?: string;
+  } | null;
   permission?: {
     plan: string;
     status: string;
@@ -276,6 +284,24 @@ export default function LeadsPage() {
     refresh();
   }
 
+  async function clearTestData() {
+    const confirmed = window.confirm("上线前清空会删除当前后台里的测试客户、权限、使用次数和操作记录。请先下载完整备份。确定继续吗？");
+    if (!confirmed) return;
+    const secondConfirmed = window.confirm("再次确认：清空后后台会变成空数据，正式客户需要重新提交。确定清空测试数据？");
+    if (!secondConfirmed) return;
+    const response = await fetch(`${ADMIN_API}/reset-test-data`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: "RESET_TEST_DATA" })
+    });
+    if (!response.ok) {
+      window.alert("清空失败，请确认后端已经部署最新版。");
+      return;
+    }
+    window.alert("测试数据已清空。");
+    refresh();
+  }
+
   useEffect(() => {
     refresh();
     fetchPlans().then(setPlans);
@@ -293,6 +319,7 @@ export default function LeadsPage() {
           <button className="btn secondary" onClick={downloadBackup}>下载完整备份</button>
           <button className="btn secondary" onClick={chooseRestoreFile}>上传备份恢复</button>
           <input ref={restoreInputRef} type="file" accept="application/json,.json" onChange={restoreBackup} style={{ display: "none" }} />
+          <button className="btn secondary" onClick={clearTestData}>清空测试数据</button>
           <button className="btn secondary" onClick={refresh}>{loading ? "刷新中" : "刷新"}</button>
         </div>
       </div>
@@ -390,30 +417,39 @@ export default function LeadsPage() {
           <p className="muted">暂无授权客户。</p>
         ) : (
           <div className="table permission-table">
+            <div className="table-head">姓名</div>
+            <div className="table-head">手机号</div>
             <div className="table-head">UnionID</div>
+            <div className="table-head">店铺 / 项目</div>
             <div className="table-head">锁定功能</div>
             <div className="table-head">试用次数</div>
             <div className="table-head">权限</div>
             <div className="table-head">操作</div>
-            {users.map((user) => (
-              <Fragment key={user.unionid}>
-                <div>{user.unionid}</div>
-                <div>{toolLabel(user.locked_tool)}</div>
-                <div>{user.tool_trial_count}/3</div>
-                <div>{user.permission?.status === "active" ? `${planLabel(plans, user.permission.plan)}，到期 ${user.permission.expires_at}` : "未开通"}</div>
-                <div className="table-actions">
-                  {plans.map((plan, index) => (
-                    <button
-                      key={plan.id}
-                      className={index === 0 ? "btn" : "btn secondary"}
-                      onClick={() => grant(user.unionid, plan.id)}
-                    >
-                      {plan.admin_button}
-                    </button>
-                  ))}
-                </div>
-              </Fragment>
-            ))}
+            {users.map((user) => {
+              const profile = user.lead_profile;
+              return (
+                <Fragment key={user.unionid}>
+                  <div>{profile?.name || "未提交"}</div>
+                  <div>{profile?.phone || "未提交"}</div>
+                  <div>{user.unionid}</div>
+                  <div>{profile ? `${profile.shop || "未填写"} / ${profile.product || "未选择"}` : "暂无客资"}</div>
+                  <div>{toolLabel(user.locked_tool)}</div>
+                  <div>{user.tool_trial_count}/3</div>
+                  <div>{user.permission?.status === "active" ? `${planLabel(plans, user.permission.plan)}，到期 ${user.permission.expires_at}` : "未开通"}</div>
+                  <div className="table-actions">
+                    {plans.map((plan, index) => (
+                      <button
+                        key={plan.id}
+                        className={index === 0 ? "btn" : "btn secondary"}
+                        onClick={() => grant(user.unionid, plan.id)}
+                      >
+                        {plan.admin_button}
+                      </button>
+                    ))}
+                  </div>
+                </Fragment>
+              );
+            })}
           </div>
         )}
       </section>

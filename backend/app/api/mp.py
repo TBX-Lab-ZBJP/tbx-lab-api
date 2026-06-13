@@ -291,6 +291,29 @@ def public_user(user: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def latest_lead_profiles(db: sqlite3.Connection) -> dict[str, dict[str, Any]]:
+    rows = db.execute(
+        """
+        SELECT unionid, name, phone, wechat, shop, product, created_at
+        FROM mp_leads
+        ORDER BY created_at DESC
+        """
+    ).fetchall()
+    profiles: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        unionid = row["unionid"]
+        if unionid not in profiles:
+            profiles[unionid] = {
+                "name": row["name"],
+                "phone": row["phone"],
+                "wechat": row["wechat"],
+                "shop": row["shop"],
+                "product": row["product"],
+                "lead_created_at": row["created_at"],
+            }
+    return profiles
+
+
 def save_user(user: dict[str, Any]) -> None:
     permission = user["permission"]
     with conn() as db:
@@ -923,7 +946,28 @@ def grant_permission(payload: dict[str, Any]) -> dict[str, Any]:
 def admin_users() -> dict[str, Any]:
     with conn() as db:
         rows = db.execute("SELECT * FROM mp_users ORDER BY updated_at DESC").fetchall()
-    return {"items": [public_user(row_to_user(row)) for row in rows]}
+        profiles = latest_lead_profiles(db)
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        user = public_user(row_to_user(row))
+        user["lead_profile"] = profiles.get(user["unionid"])
+        items.append(user)
+    return {"items": items}
+
+
+@router.post("/admin/reset-test-data", dependencies=[Depends(require_admin_token)])
+def admin_reset_test_data(payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    confirm = (payload or {}).get("confirm")
+    if confirm != "RESET_TEST_DATA":
+        raise HTTPException(status_code=400, detail="missing_reset_confirmation")
+    init_db()
+    deleted: dict[str, int] = {}
+    with conn() as db:
+        for table in ("mp_daily_usage", "mp_activity", "mp_leads", "mp_users"):
+            before = db.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"]
+            db.execute(f"DELETE FROM {table}")
+            deleted[table] = int(before)
+    return {"ok": True, "deleted": deleted}
 
 
 @router.get("/admin/stats", dependencies=[Depends(require_admin_token)])
