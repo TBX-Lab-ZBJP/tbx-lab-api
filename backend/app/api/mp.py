@@ -716,7 +716,7 @@ def create_lead(payload: dict[str, Any]) -> dict[str, Any]:
                 lead["updated_at"],
             ),
         )
-    return {"status": "received", "next_step": "员工会在员工线索台看到这条信息，然后通过企微或电话 1V1 人工跟进。", "lead": lead}
+    return {"status": "received", "next_step": "员工会在员工后台看到这条信息，然后通过企微 1V1 人工跟进。", "lead": lead}
 
 
 @router.get("/admin/leads", dependencies=[Depends(require_admin_token)])
